@@ -1,8 +1,11 @@
-from aiogram import Router, F
+from aiogram import Router
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from bot.content import bot_content
 from db.database import async_session
-from db.crud import get_or_create_user
+from db.crud import get_or_create_user, get_recent_user_posts, get_top_users, get_user_post_stats
+from db.models.post import PostStatus
 
 base_router = Router()
 
@@ -16,11 +19,88 @@ async def start_handler(message: Message):
             full_name=message.from_user.full_name
         )
     
-    await message.answer(
-        "Привет! Я бот для предложки фотографий животных в канал.\n\n"
-        "Просто отправь мне фото животного, которое хочешь предложить!"
-    )
+    await message.answer(bot_content.message("start"))
 
 @base_router.message(Command("help"))
 async def help_handler(message: Message):
-    await message.answer("Отправьте фото, чтобы предложить пост. Мы выберем день и опубликуем его в канале.")
+    await message.answer(bot_content.message("help"))
+
+
+@base_router.message(Command("profile"))
+async def profile_handler(message: Message):
+    async with async_session() as session:
+        user = await get_or_create_user(
+            session,
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            full_name=message.from_user.full_name,
+        )
+        stats = await get_user_post_stats(session, user.id)
+
+    stats_text = "\n".join(
+        bot_content.message(
+            "status_count_line",
+            status=bot_content.status_label(status),
+            count=stats.get(status, 0),
+        )
+        for status in PostStatus
+    )
+    await message.answer(bot_content.message("profile", score=user.score, stats=stats_text))
+
+
+@base_router.message(Command("my_posts"))
+async def my_posts_handler(message: Message):
+    async with async_session() as session:
+        user = await get_or_create_user(
+            session,
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            full_name=message.from_user.full_name,
+        )
+        posts = await get_recent_user_posts(session, user.id)
+
+    if not posts:
+        await message.answer(bot_content.message("my_posts_empty"))
+        return
+
+    lines = []
+    for post in posts:
+        schedule = (
+            post.schedule_time.strftime("%Y-%m-%d %H:%M")
+            if post.schedule_time
+            else bot_content.message("schedule_not_selected")
+        )
+        lines.append(
+            bot_content.message(
+                "my_posts_line",
+                post_id=post.id,
+                animal_type=post.animal_type,
+                status=bot_content.status_label(post.status),
+                schedule=schedule,
+            )
+        )
+
+    await message.answer(bot_content.message("my_posts_header", posts="\n".join(lines)))
+
+
+@base_router.message(Command("top"))
+async def top_handler(message: Message):
+    async with async_session() as session:
+        users = await get_top_users(session)
+
+    if not users:
+        await message.answer(bot_content.message("top_empty"))
+        return
+
+    lines = []
+    for index, user in enumerate(users, start=1):
+        name = user.username or user.full_name or str(user.telegram_id)
+        lines.append(bot_content.message("top_line", position=index, name=name, score=user.score))
+
+    await message.answer(bot_content.message("top_header", users="\n".join(lines)))
+
+
+@base_router.message(Command("cancel"))
+async def cancel_handler(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(bot_content.message("cancelled"))

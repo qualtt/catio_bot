@@ -4,6 +4,5 @@ SQLAlchemy==2.0.36
 alembic==1.14.0
 pydantic-settings==2.6.1
 redis==5.2.0
-pyrogram==2.0.106
-tgcrypto==1.2.5
 python-dotenv==1.0.1
+boto3==1.35.99
