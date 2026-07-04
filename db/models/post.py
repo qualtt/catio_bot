@@ -15,6 +15,7 @@ class Post(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    photo_id: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), nullable=True)
     file_id: Mapped[str] = mapped_column(String, index=True)
     animal_type: Mapped[str | None] = mapped_column(String(50))
     status: Mapped[PostStatus] = mapped_column(default=PostStatus.PENDING)
@@ -23,4 +24,5 @@ class Post(Base):
     message_id: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    # user = relationship("User", backref="posts")
+    user: Mapped["User"] = relationship(back_populates="posts")
+    photo: Mapped["Photo | None"] = relationship(back_populates="posts")

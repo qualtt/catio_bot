@@ -1,5 +1,5 @@
 from sqlalchemy import BigInteger, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
 class User(Base):
@@ -10,3 +10,5 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(255))
     full_name: Mapped[str | None] = mapped_column(String(255))
     score: Mapped[int] = mapped_column(default=0)
+
+    posts: Mapped[list["Post"]] = relationship(back_populates="user")
