@@ -31,7 +31,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Pyrogram session files
+# Telegram session files
 *.session
 *.session-journal
 

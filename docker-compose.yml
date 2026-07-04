@@ -1,17 +1,20 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-animal_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-catio_bot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bot_password}
-      POSTGRES_DB: ${POSTGRES_DB:-animal_bot_db}
+      POSTGRES_DB: ${POSTGRES_DB:-catio_bot_db}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-catio_bot} -d ${POSTGRES_DB:-catio_bot_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -20,16 +23,46 @@ services:
       - "6379:6379"
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-  # The bot and userbot will be run locally for development first
-  # bot:
-  #   build: .
-  #   restart: always
-  #   env_file:
-  #     - .env
-  #   depends_on:
-  #     - db
-  #     - redis
+  bot:
+    build: .
+    restart: always
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-catio_bot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bot_password}
+      POSTGRES_DB: ${POSTGRES_DB:-catio_bot_db}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-catio_bot}:${POSTGRES_PASSWORD:-bot_password}@db:5432/${POSTGRES_DB:-catio_bot_db}
+      TIMEZONE: ${TIMEZONE:-Europe/Moscow}
+      DAILY_SLOT_TIMES: ${DAILY_SLOT_TIMES:-11:00}
+      AUTO_POST_DAYS_AHEAD: ${AUTO_POST_DAYS_AHEAD:-30}
+      PUBLISHER_POLL_INTERVAL_SECONDS: ${PUBLISHER_POLL_INTERVAL_SECONDS:-60}
+      BOT_CONTENT_PATH: ${BOT_CONTENT_PATH:-/app/bot_content.json}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_PREFIX: ${S3_PREFIX:-catio-bot/photos}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+    volumes:
+      - ./bot_content.json:/app/bot_content.json
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   pgdata:
