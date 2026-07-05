@@ -10,6 +10,7 @@ from pathlib import PurePosixPath
 import boto3
 from aiogram import Bot
 from botocore.config import Config
+from PIL import Image, UnidentifiedImageError
 
 from bot.config import config
 
@@ -23,6 +24,15 @@ class StoredPhoto:
     content_type: str
     file_size: int
     sha256: str
+    perceptual_hash: str | None
+
+
+@dataclass(frozen=True)
+class PhotoMetadata:
+    content_type: str
+    file_size: int
+    sha256: str
+    perceptual_hash: str | None
 
 
 def _require_bucket() -> str:
@@ -57,29 +67,69 @@ def _storage_key(source: str, sha256: str, file_path: str | None) -> str:
     return f"{prefix}/{key}" if prefix else key
 
 
-async def upload_telegram_photo(
-    bot: Bot,
+def compute_perceptual_hash(data: bytes, hash_size: int = 8) -> str | None:
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            grayscale = image.convert("L").resize(
+                (hash_size + 1, hash_size),
+                Image.Resampling.LANCZOS,
+            )
+    except (OSError, UnidentifiedImageError):
+        return None
+
+    pixels = list(grayscale.getdata())
+    value = 0
+    for row in range(hash_size):
+        row_offset = row * (hash_size + 1)
+        for col in range(hash_size):
+            value <<= 1
+            if pixels[row_offset + col] > pixels[row_offset + col + 1]:
+                value |= 1
+    return f"{value:0{hash_size * hash_size // 4}x}"
+
+
+def hamming_distance(left: str | None, right: str | None) -> int | None:
+    if not left or not right:
+        return None
+    try:
+        return (int(left, 16) ^ int(right, 16)).bit_count()
+    except ValueError:
+        return None
+
+
+def photo_metadata_from_bytes(
     *,
+    data: bytes,
+    file_path: str | None = None,
+    content_type: str | None = None,
+) -> PhotoMetadata:
+    return PhotoMetadata(
+        content_type=content_type or mimetypes.guess_type(file_path or "")[0] or "image/jpeg",
+        file_size=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+        perceptual_hash=compute_perceptual_hash(data),
+    )
+
+
+async def upload_photo_bytes(
+    *,
+    data: bytes,
     file_id: str,
     file_unique_id: str | None,
     source: str,
+    file_path: str | None = None,
+    content_type: str | None = None,
 ) -> StoredPhoto:
     bucket = _require_bucket()
-    telegram_file = await bot.get_file(file_id)
-
-    buffer = io.BytesIO()
-    await bot.download_file(telegram_file.file_path, destination=buffer)
-    data = buffer.getvalue()
-    sha256 = hashlib.sha256(data).hexdigest()
-    storage_key = _storage_key(source, sha256, telegram_file.file_path)
-    content_type = mimetypes.guess_type(telegram_file.file_path or "")[0] or "image/jpeg"
+    metadata = photo_metadata_from_bytes(data=data, file_path=file_path, content_type=content_type)
+    storage_key = _storage_key(source, metadata.sha256, file_path)
 
     def upload() -> None:
         _s3_client().put_object(
             Bucket=bucket,
             Key=storage_key,
             Body=data,
-            ContentType=content_type,
+            ContentType=metadata.content_type,
         )
 
     await asyncio.to_thread(upload)
@@ -89,9 +139,30 @@ async def upload_telegram_photo(
         telegram_file_unique_id=file_unique_id,
         storage_bucket=bucket,
         storage_key=storage_key,
-        content_type=content_type,
-        file_size=len(data),
-        sha256=sha256,
+        content_type=metadata.content_type,
+        file_size=metadata.file_size,
+        sha256=metadata.sha256,
+        perceptual_hash=metadata.perceptual_hash,
+    )
+
+
+async def upload_telegram_photo(
+    bot: Bot,
+    *,
+    file_id: str,
+    file_unique_id: str | None,
+    source: str,
+) -> StoredPhoto:
+    telegram_file = await bot.get_file(file_id)
+
+    buffer = io.BytesIO()
+    await bot.download_file(telegram_file.file_path, destination=buffer)
+    return await upload_photo_bytes(
+        data=buffer.getvalue(),
+        file_id=file_id,
+        file_unique_id=file_unique_id,
+        source=source,
+        file_path=telegram_file.file_path,
     )
 
 

@@ -9,17 +9,17 @@ from bot.content import bot_content
 
 def slot_marker(free_slots: int, max_slots: int) -> str:
     if free_slots <= 0:
-        return "⚫"
+        return "⬛️"
 
     if max_slots <= 1:
-        return "🟢"
+        return "🟩"
 
     ratio = free_slots / max_slots
     if ratio <= 0.34:
-        return "🔴"
+        return "🟥"
     if ratio <= 0.6:
-        return "🟡"
-    return "🟢"
+        return "🟨"
+    return "🟩"
 
 
 def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:

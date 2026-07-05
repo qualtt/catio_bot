@@ -4,5 +4,24 @@ from .animal_type import AnimalType
 from .photo import Photo
 from .post import Post
 from .channel_history import ChannelHistory
+from .score_event import ScoreEvent
+from .photo_identification import (
+    PhotoIdentificationAssignment,
+    PhotoIdentificationBatch,
+    PhotoIdentificationBatchItem,
+    PhotoIdentificationVote,
+)
 
-__all__ = ["Base", "User", "AnimalType", "Photo", "Post", "ChannelHistory"]
+__all__ = [
+    "Base",
+    "User",
+    "AnimalType",
+    "Photo",
+    "Post",
+    "ChannelHistory",
+    "ScoreEvent",
+    "PhotoIdentificationAssignment",
+    "PhotoIdentificationBatch",
+    "PhotoIdentificationBatchItem",
+    "PhotoIdentificationVote",
+]

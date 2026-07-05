@@ -17,7 +17,8 @@ class Photo(Base):
     content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     sha256: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    perceptual_hash: Mapped[str | None] = mapped_column(String(16), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    posts: Mapped[list["Post"]] = relationship(back_populates="photo")
+    posts: Mapped[list["Post"]] = relationship(back_populates="photo", foreign_keys="Post.photo_id")
     channel_history_items: Mapped[list["ChannelHistory"]] = relationship(back_populates="photo")

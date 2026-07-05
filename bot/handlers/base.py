@@ -3,6 +3,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from bot.content import bot_content
+from bot.keyboards.inline import get_main_menu_kb
 from db.database import async_session
 from db.crud import get_or_create_user, get_recent_user_posts, get_top_users, get_user_post_stats
 from db.models.post import PostStatus
@@ -19,11 +20,11 @@ async def start_handler(message: Message):
             full_name=message.from_user.full_name
         )
     
-    await message.answer(bot_content.message("start"))
+    await message.answer(bot_content.message("start"), reply_markup=get_main_menu_kb())
 
 @base_router.message(Command("help"))
 async def help_handler(message: Message):
-    await message.answer(bot_content.message("help"))
+    await message.answer(bot_content.message("help"), reply_markup=get_main_menu_kb())
 
 
 @base_router.message(Command("profile"))

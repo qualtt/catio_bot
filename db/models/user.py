@@ -12,3 +12,6 @@ class User(Base):
     score: Mapped[int] = mapped_column(default=0)
 
     posts: Mapped[list["Post"]] = relationship(back_populates="user")
+    score_events: Mapped[list["ScoreEvent"]] = relationship(back_populates="user")
+    identification_assignments: Mapped[list["PhotoIdentificationAssignment"]] = relationship(back_populates="user")
+    identification_votes: Mapped[list["PhotoIdentificationVote"]] = relationship(back_populates="user")

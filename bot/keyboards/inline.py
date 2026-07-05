@@ -3,9 +3,12 @@ from datetime import date, time
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.config import config
 from bot.content import bot_content
+from bot.services.identification import ITEM_REJECTED
 from db.crud import AnimalTypeOption, get_animal_type_options
 from db.database import async_session
+from db.models.post import PostStatus
 
 
 def _two_column_rows(item_count: int, footer_count: int = 0) -> list[int]:
@@ -14,6 +17,13 @@ def _two_column_rows(item_count: int, footer_count: int = 0) -> list[int]:
         rows.append(1)
     rows.extend([1] * footer_count)
     return rows or [1]
+
+
+def get_main_menu_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=bot_content.button("identify_old_photos"), callback_data="identify_next")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 async def get_animal_type_kb() -> InlineKeyboardMarkup:
@@ -42,8 +52,18 @@ async def get_other_animal_type_kb() -> InlineKeyboardMarkup:
 
 def get_schedule_choice_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text=bot_content.button("schedule_auto"), callback_data="schedule_auto")
-    builder.button(text=bot_content.button("schedule_manual"), callback_data="schedule_manual")
+    builder.button(
+        text=bot_content.button(
+            "schedule_auto",
+            bonus_min=config.SCORE_AUTO_BONUS_MIN_PERCENT,
+            bonus_max=config.SCORE_AUTO_BONUS_MAX_PERCENT,
+        ),
+        callback_data="schedule_auto",
+    )
+    builder.button(
+        text=bot_content.button("schedule_manual", points=config.SCORE_APPROVED_POST_BASE),
+        callback_data="schedule_manual",
+    )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -53,6 +73,34 @@ def get_admin_approval_kb(post_id: int) -> InlineKeyboardMarkup:
     builder.button(text=bot_content.button("reject"), callback_data=f"admin_reject_{post_id}")
     builder.button(text=bot_content.button("change_animal"), callback_data=f"admin_change_{post_id}")
     builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def get_admin_album_kb(posts) -> InlineKeyboardMarkup | None:
+    pending_posts = [
+        post
+        for post in sorted(posts, key=lambda item: item.submission_group_index or item.id)
+        if post.status == PostStatus.PENDING
+    ]
+    if not pending_posts:
+        return None
+
+    builder = InlineKeyboardBuilder()
+    for index, post in enumerate(pending_posts, start=1):
+        number = post.submission_group_index or index
+        builder.button(
+            text=bot_content.button("album_approve", number=number),
+            callback_data=f"admin_approve_{post.id}",
+        )
+        builder.button(
+            text=bot_content.button("album_reject", number=number),
+            callback_data=f"admin_reject_{post.id}",
+        )
+        builder.button(
+            text=bot_content.button("album_change", number=number),
+            callback_data=f"admin_change_{post.id}",
+        )
+    builder.adjust(*([3] * len(pending_posts)))
     return builder.as_markup()
 
 
@@ -79,4 +127,53 @@ def get_time_slots_kb(target_date: date, free_times: list[time]) -> InlineKeyboa
         )
     builder.button(text=bot_content.button("back_to_calendar"), callback_data="schedule_manual")
     builder.adjust(3, 1)
+    return builder.as_markup()
+
+
+async def get_identification_animal_type_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    async with async_session() as session:
+        animal_types = await get_animal_type_options(session, is_primary=True)
+
+    for animal_type in animal_types:
+        builder.button(text=animal_type.name, callback_data=f"identify_animal_id_{animal_type.id}")
+    builder.button(text=bot_content.other_animal_label(), callback_data="identify_other")
+    builder.adjust(*_two_column_rows(len(animal_types), footer_count=1))
+    return builder.as_markup()
+
+
+async def get_identification_other_animal_type_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    async with async_session() as session:
+        animal_types = await get_animal_type_options(session, is_primary=False)
+
+    for animal_type in animal_types:
+        builder.button(text=animal_type.name, callback_data=f"identify_animal_extra_id_{animal_type.id}")
+    builder.button(text=bot_content.button("custom_animal_type"), callback_data="identify_custom")
+    builder.button(text=bot_content.button("back"), callback_data="identify_back")
+    builder.adjust(*_two_column_rows(len(animal_types), footer_count=2))
+    return builder.as_markup()
+
+
+def get_identification_continue_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=bot_content.button("identify_next"), callback_data="identify_next")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_identification_batch_kb(batch) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for item in batch.items:
+        prefix = "NO" if item.status == ITEM_REJECTED else "OK"
+        builder.button(
+            text=f"{prefix} {item.item_number}",
+            callback_data=f"ident_item_{batch.id}_{item.item_number}",
+        )
+    builder.button(text=bot_content.button("identification_batch_done"), callback_data=f"ident_batch_done_{batch.id}")
+    builder.button(
+        text=bot_content.button("identification_batch_reject"),
+        callback_data=f"ident_batch_reject_{batch.id}",
+    )
+    builder.adjust(*_two_column_rows(len(batch.items), footer_count=2))
     return builder.as_markup()

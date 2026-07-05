@@ -1,8 +1,12 @@
 aiogram==3.17.0
 asyncpg==0.30.0
 SQLAlchemy==2.0.36
+greenlet==3.1.1
 alembic==1.14.0
 pydantic-settings==2.6.1
 redis==5.2.0
 python-dotenv==1.0.1
 boto3==1.35.99
+Pillow==10.4.0
+Pyrogram==2.0.106
+tgcrypto==1.2.5

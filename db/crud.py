@@ -10,6 +10,7 @@ from db.models.photo import Photo
 from db.models.user import User
 from db.models.post import Post, PostStatus
 from bot.config import config
+from bot.services.photo_storage import hamming_distance
 
 
 OCCUPYING_STATUSES = [PostStatus.PENDING, PostStatus.APPROVED, PostStatus.PUBLISHED]
@@ -21,6 +22,13 @@ class AnimalTypeOption:
     id: int
     name: str
     photo_count: int
+
+
+@dataclass(frozen=True)
+class DuplicatePhotoMatch:
+    photo_id: int
+    distance: int
+    reason: str
 
 
 def app_timezone() -> ZoneInfo:
@@ -154,6 +162,54 @@ async def get_photo_by_sha256(session: AsyncSession, sha256: str | None) -> Phot
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def get_channel_history_item_by_message_id(session: AsyncSession, message_id: int) -> ChannelHistory | None:
+    stmt = select(ChannelHistory).where(ChannelHistory.message_id == message_id)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def photo_has_known_usage(session: AsyncSession, photo_id: int) -> bool:
+    post_count = await session.scalar(select(func.count(Post.id)).where(Post.photo_id == photo_id))
+    if post_count:
+        return True
+
+    history_count = await session.scalar(select(func.count(ChannelHistory.id)).where(ChannelHistory.photo_id == photo_id))
+    return bool(history_count)
+
+
+async def find_duplicate_photo(
+    session: AsyncSession,
+    photo: Photo,
+    max_distance: int | None = None,
+) -> DuplicatePhotoMatch | None:
+    if await photo_has_known_usage(session, photo.id):
+        return DuplicatePhotoMatch(photo_id=photo.id, distance=0, reason="exact")
+
+    if photo.sha256:
+        stmt = select(Photo).where(Photo.id != photo.id, Photo.sha256 == photo.sha256)
+        exact = (await session.execute(stmt)).scalar_one_or_none()
+        if exact:
+            return DuplicatePhotoMatch(photo_id=exact.id, distance=0, reason="exact")
+
+    if not photo.perceptual_hash:
+        return None
+
+    threshold = config.DUPLICATE_PHASH_MAX_DISTANCE if max_distance is None else max_distance
+    stmt = select(Photo.id, Photo.perceptual_hash).where(
+        Photo.id != photo.id,
+        Photo.perceptual_hash.is_not(None),
+    )
+    result = await session.execute(stmt)
+    best_match: DuplicatePhotoMatch | None = None
+    for other_photo_id, other_hash in result.all():
+        distance = hamming_distance(photo.perceptual_hash, other_hash)
+        if distance is None or distance > threshold:
+            continue
+        if best_match is None or distance < best_match.distance:
+            best_match = DuplicatePhotoMatch(photo_id=other_photo_id, distance=distance, reason="similar")
+
+    return best_match
+
+
 async def create_photo(
     session: AsyncSession,
     *,
@@ -164,6 +220,7 @@ async def create_photo(
     content_type: str | None = None,
     file_size: int | None = None,
     sha256: str | None = None,
+    perceptual_hash: str | None = None,
 ) -> Photo:
     photo = Photo(
         telegram_file_id=telegram_file_id,
@@ -173,6 +230,7 @@ async def create_photo(
         content_type=content_type,
         file_size=file_size,
         sha256=sha256,
+        perceptual_hash=perceptual_hash,
     )
     session.add(photo)
     try:
@@ -181,13 +239,78 @@ async def create_photo(
         await session.rollback()
         existing = await get_photo_by_telegram_unique_id(session, telegram_file_unique_id)
         if existing:
-            return existing
+            return await update_photo_metadata(
+                session,
+                existing,
+                telegram_file_id=telegram_file_id,
+                content_type=content_type,
+                file_size=file_size,
+                sha256=sha256,
+                perceptual_hash=perceptual_hash,
+            )
         existing = await get_photo_by_sha256(session, sha256)
         if existing:
-            return existing
+            return await update_photo_metadata(
+                session,
+                existing,
+                telegram_file_id=telegram_file_id,
+                telegram_file_unique_id=telegram_file_unique_id,
+                content_type=content_type,
+                file_size=file_size,
+                sha256=sha256,
+                perceptual_hash=perceptual_hash,
+            )
         raise
 
     await session.refresh(photo)
+    return photo
+
+
+async def update_photo_metadata(
+    session: AsyncSession,
+    photo: Photo,
+    *,
+    telegram_file_id: str | None = None,
+    telegram_file_unique_id: str | None = None,
+    content_type: str | None = None,
+    file_size: int | None = None,
+    sha256: str | None = None,
+    perceptual_hash: str | None = None,
+) -> Photo:
+    changed = False
+
+    if telegram_file_id and photo.telegram_file_id != telegram_file_id:
+        photo.telegram_file_id = telegram_file_id
+        changed = True
+
+    if telegram_file_unique_id and not photo.telegram_file_unique_id:
+        existing = await get_photo_by_telegram_unique_id(session, telegram_file_unique_id)
+        if existing is None or existing.id == photo.id:
+            photo.telegram_file_unique_id = telegram_file_unique_id
+            changed = True
+
+    if content_type and not photo.content_type:
+        photo.content_type = content_type
+        changed = True
+
+    if file_size is not None and photo.file_size is None:
+        photo.file_size = file_size
+        changed = True
+
+    if sha256 and not photo.sha256:
+        existing = await get_photo_by_sha256(session, sha256)
+        if existing is None or existing.id == photo.id:
+            photo.sha256 = sha256
+            changed = True
+
+    if perceptual_hash and not photo.perceptual_hash:
+        photo.perceptual_hash = perceptual_hash
+        changed = True
+
+    if changed:
+        await session.commit()
+        await session.refresh(photo)
+
     return photo
 
 
@@ -200,6 +323,19 @@ async def create_channel_history_item(
     animal_type: str | None = None,
     identified_by: int | None = None,
 ) -> ChannelHistory:
+    existing = await get_channel_history_item_by_message_id(session, message_id)
+    if existing:
+        existing.file_id = file_id
+        if photo_id is not None:
+            existing.photo_id = photo_id
+        if animal_type is not None:
+            existing.animal_type = animal_type
+        if identified_by is not None:
+            existing.identified_by = identified_by
+        await session.commit()
+        await session.refresh(existing)
+        return existing
+
     item = ChannelHistory(
         message_id=message_id,
         file_id=file_id,
@@ -298,10 +434,20 @@ async def create_post(
     is_auto_scheduled: bool = False,
     manual_time: datetime = None,
     photo_id: int | None = None,
+    duplicate_of_photo_id: int | None = None,
+    duplicate_distance: int | None = None,
+    submission_group_id: str | None = None,
+    submission_group_index: int | None = None,
+    submission_group_size: int | None = None,
 ) -> Post:
     post = Post(
         user_id=user_id,
         photo_id=photo_id,
+        duplicate_of_photo_id=duplicate_of_photo_id,
+        duplicate_distance=duplicate_distance,
+        submission_group_id=submission_group_id,
+        submission_group_index=submission_group_index,
+        submission_group_size=submission_group_size,
         file_id=file_id,
         animal_type=animal_type,
         is_auto_scheduled=is_auto_scheduled,

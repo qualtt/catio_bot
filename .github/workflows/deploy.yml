@@ -9,51 +9,28 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Create .env file from GitHub Secrets
-        run: |
-          echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
-          echo "ADMIN_ID=${{ secrets.ADMIN_ID }}" >> .env
-          echo "CHANNEL_ID=${{ secrets.CHANNEL_ID }}" >> .env
-          echo "POSTGRES_USER=${{ secrets.POSTGRES_USER }}" >> .env
-          echo "POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}" >> .env
-          echo "POSTGRES_DB=${{ secrets.POSTGRES_DB }}" >> .env
-          echo "POSTGRES_HOST=db" >> .env
-          echo "POSTGRES_PORT=5432" >> .env
-          echo "DATABASE_URL=postgresql+asyncpg://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@db:5432/${{ secrets.POSTGRES_DB }}" >> .env
-          echo "REDIS_HOST=redis" >> .env
-          echo "REDIS_PORT=6379" >> .env
-          echo "S3_ENDPOINT_URL=${{ secrets.S3_ENDPOINT_URL }}" >> .env
-          echo "S3_REGION=${{ secrets.S3_REGION || 'us-east-1' }}" >> .env
-          echo "S3_BUCKET=${{ secrets.S3_BUCKET }}" >> .env
-          echo "S3_ACCESS_KEY_ID=${{ secrets.S3_ACCESS_KEY_ID }}" >> .env
-          echo "S3_SECRET_ACCESS_KEY=${{ secrets.S3_SECRET_ACCESS_KEY }}" >> .env
-          echo "S3_PREFIX=${{ secrets.S3_PREFIX || 'catio-bot/photos' }}" >> .env
-          echo "S3_FORCE_PATH_STYLE=${{ secrets.S3_FORCE_PATH_STYLE || 'false' }}" >> .env
-          echo "TIMEZONE=Europe/Moscow" >> .env
-          echo "DAILY_SLOT_TIMES=11:00" >> .env
-          echo "AUTO_POST_DAYS_AHEAD=30" >> .env
-          echo "PUBLISHER_POLL_INTERVAL_SECONDS=60" >> .env
-
-      - name: Copy files to server
-        uses: appleboy/scp-action@v0.1.4
+      - name: Copy app files to server
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "."
+          source: "Dockerfile,alembic,alembic.ini,bot,bot_content.json,db,docker-compose.yml,requirements.txt"
           target: "/opt/catio_bot"
 
-      - name: Restart Docker Compose
-        uses: appleboy/ssh-action@v0.1.10
+      - name: Run migrations and restart
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd /opt/catio_bot
-            docker compose down
-            docker compose up -d --build
+            test -f .env
+            docker compose run --rm bot alembic upgrade head
+            docker compose up -d --build --remove-orphans
