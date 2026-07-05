@@ -29,7 +29,7 @@ from bot.services.identification import (
     toggle_identification_batch_item,
 )
 from bot.services.photo_storage import download_photo
-from db.crud import canonical_animal_type, get_animal_type_name, get_or_create_user
+from db.crud import animal_type_has_unsupported_latin, canonical_animal_type, get_animal_type_name, get_or_create_user
 from db.database import async_session
 from db.models.channel_history import ChannelHistory
 
@@ -346,6 +346,10 @@ async def handle_identify_extra_animal_type(callback: CallbackQuery, state: FSMC
 async def handle_identify_custom_text(message: Message, state: FSMContext, bot: Bot):
     max_length = bot_content.animal_type_max_length()
     data = await state.get_data()
+    if animal_type_has_unsupported_latin(message.text):
+        await message.answer(bot_content.message("invalid_custom_animal_type_layout"))
+        return
+
     async with async_session() as session:
         animal_type = await canonical_animal_type(session, message.text)
 

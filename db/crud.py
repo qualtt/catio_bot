@@ -18,6 +18,34 @@ OCCUPYING_STATUSES = [PostStatus.PENDING, PostStatus.APPROVED, PostStatus.PUBLIS
 POPULARITY_STATUSES = [PostStatus.APPROVED, PostStatus.PUBLISHED]
 
 
+LATIN_TO_CYRILLIC_HOMOGLYPHS = str.maketrans(
+    {
+        "A": "А",
+        "B": "В",
+        "C": "С",
+        "E": "Е",
+        "H": "Н",
+        "K": "К",
+        "M": "М",
+        "O": "О",
+        "P": "Р",
+        "T": "Т",
+        "X": "Х",
+        "Y": "У",
+        "a": "а",
+        "c": "с",
+        "e": "е",
+        "k": "к",
+        "m": "м",
+        "o": "о",
+        "p": "р",
+        "t": "т",
+        "x": "х",
+        "y": "у",
+    }
+)
+
+
 @dataclass(frozen=True)
 class AnimalTypeOption:
     id: int
@@ -65,10 +93,47 @@ def ensure_app_timezone(value: datetime) -> datetime:
     return value.astimezone(app_timezone())
 
 
+def _has_cyrillic(value: str) -> bool:
+    return any("А" <= char <= "я" or char in "Ёё" for char in value)
+
+
+def _has_latin(value: str) -> bool:
+    return any("A" <= char <= "Z" or "a" <= char <= "z" for char in value)
+
+
 def normalize_animal_type(value: str | None) -> str:
     if not value:
         return ""
-    return " ".join(value.split())
+    normalized = " ".join(value.split())
+    if _has_cyrillic(normalized):
+        normalized = normalized.translate(LATIN_TO_CYRILLIC_HOMOGLYPHS)
+    return normalized
+
+
+def animal_type_has_unsupported_latin(value: str | None) -> bool:
+    return _has_latin(normalize_animal_type(value))
+
+
+def is_valid_animal_type_name(value: str | None) -> bool:
+    normalized = normalize_animal_type(value)
+    return bool(normalized) and not animal_type_has_unsupported_latin(normalized)
+
+
+def animal_type_lookup_key(value: str | None) -> str:
+    return normalize_animal_type(value).replace("ё", "е").replace("Ё", "Е").casefold()
+
+
+CAT_ANIMAL_TYPE_KEYS = {
+    animal_type_lookup_key("кот"),
+    animal_type_lookup_key("кошка"),
+    animal_type_lookup_key("котик"),
+    animal_type_lookup_key("котенок"),
+    animal_type_lookup_key("котёнок"),
+}
+
+
+def is_cat_animal_type(value: str | None) -> bool:
+    return animal_type_lookup_key(value) in CAT_ANIMAL_TYPE_KEYS
 
 
 async def get_animal_type_options(session: AsyncSession, is_primary: bool) -> list[AnimalTypeOption]:
@@ -104,29 +169,47 @@ async def _find_animal_type_by_normalized_name(session: AsyncSession, normalized
     if existing:
         return existing
 
+    lookup_key = animal_type_lookup_key(normalized)
     result = await session.execute(select(AnimalType))
     for animal_type in result.scalars():
-        if animal_type.name.casefold() == normalized.casefold():
+        if animal_type_lookup_key(animal_type.name) == lookup_key:
             return animal_type
     return None
 
 
 async def canonical_animal_type(session: AsyncSession, value: str | None) -> str:
     normalized = normalize_animal_type(value)
-    if not normalized:
+    if not normalized or animal_type_has_unsupported_latin(normalized):
         return ""
 
     existing = await _find_animal_type_by_normalized_name(session, normalized)
-    return existing.name if existing else normalized
+    if existing:
+        existing_normalized = normalize_animal_type(existing.name)
+        if existing_normalized and not animal_type_has_unsupported_latin(existing_normalized):
+            return existing_normalized
+        return existing.name
+    return normalized
 
 
 async def ensure_animal_type(session: AsyncSession, value: str | None, is_primary: bool = False) -> AnimalType | None:
     normalized = normalize_animal_type(value)
-    if not normalized:
+    if not normalized or animal_type_has_unsupported_latin(normalized):
         return None
 
     existing = await _find_animal_type_by_normalized_name(session, normalized)
     if existing:
+        existing_normalized = normalize_animal_type(existing.name)
+        if existing_normalized != existing.name and not animal_type_has_unsupported_latin(existing_normalized):
+            duplicate = await session.scalar(
+                select(AnimalType).where(
+                    AnimalType.name == existing_normalized,
+                    AnimalType.id != existing.id,
+                )
+            )
+            if duplicate:
+                return duplicate
+            existing.name = existing_normalized
+            await session.flush()
         return existing
 
     max_sort_order = await session.scalar(
@@ -540,22 +623,112 @@ async def get_free_slot_times(session: AsyncSession, target_date: date) -> list[
         if slot_time.strftime("%H:%M") not in occupied
     ]
 
-async def get_next_auto_slot(session: AsyncSession) -> datetime:
+
+async def get_schedule_occupancy(
+    session: AsyncSession,
+    start_date: date | None = None,
+    days: int | None = None,
+) -> tuple[dict[date, set[str]], set[date]]:
+    start_date = start_date or now_in_app_tz().date()
+    days = days or config.AUTO_POST_DAYS_AHEAD
+    end_date = start_date + timedelta(days=days)
+    start_dt = combine_slot(start_date, time.min)
+    end_dt = combine_slot(end_date, time.min)
+
+    stmt = select(Post.schedule_time, Post.animal_type).where(
+        Post.status.in_(OCCUPYING_STATUSES),
+        Post.schedule_time >= start_dt,
+        Post.schedule_time < end_dt,
+    )
+    result = await session.execute(stmt)
+    occupied_slots: dict[date, set[str]] = {}
+    cat_dates: set[date] = set()
+    for scheduled_at, animal_type in result.all():
+        if scheduled_at is None:
+            continue
+        scheduled_at = ensure_app_timezone(scheduled_at)
+        scheduled_date = scheduled_at.date()
+        occupied_slots.setdefault(scheduled_date, set()).add(scheduled_at.strftime("%H:%M"))
+        if is_cat_animal_type(animal_type):
+            cat_dates.add(scheduled_date)
+
+    return occupied_slots, cat_dates
+
+
+def _selected_schedule_context(
+    selected_slots: set[datetime] | list[datetime] | None,
+) -> dict[date, set[str]]:
+    selected: dict[date, set[str]] = {}
+    for selected_slot in selected_slots or []:
+        selected_slot = ensure_app_timezone(selected_slot)
+        selected.setdefault(selected_slot.date(), set()).add(selected_slot.strftime("%H:%M"))
+    return selected
+
+
+async def get_next_auto_slot(
+    session: AsyncSession,
+    *,
+    animal_type: str | None = None,
+    start_at: datetime | None = None,
+    selected_slots: set[datetime] | list[datetime] | None = None,
+    selected_cat_dates: set[date] | list[date] | None = None,
+) -> datetime:
     """
-    Finds the next auto slot on a day without scheduled publications.
-    Starts from tomorrow and skips days that already have pending/approved/published posts.
+    Finds the next auto slot.
+
+    Cats are distributed to the nearest day without another cat. Other animals
+    can share days with cats or take an empty day. Calls without animal_type keep
+    the old empty-day behavior.
     """
-    tomorrow = now_in_app_tz().date() + timedelta(days=1)
-    first_slot = parse_daily_slot_times()[0]
+    if start_at is None:
+        tomorrow = now_in_app_tz().date() + timedelta(days=1)
+        start_at = combine_slot(tomorrow, time.min)
+    else:
+        start_at = ensure_app_timezone(start_at)
+
+    start_date = start_at.date()
+    slot_times = parse_daily_slot_times()
+    first_slot = slot_times[0]
     max_days_to_scan = config.AUTO_POST_DAYS_AHEAD + 365
-    occupied_dates = await get_occupied_dates(session, start_date=tomorrow, days=max_days_to_scan)
+    occupied_slots, cat_dates = await get_schedule_occupancy(
+        session,
+        start_date=start_date,
+        days=max_days_to_scan,
+    )
+    selected_slots_by_date = _selected_schedule_context(selected_slots)
+    selected_cat_dates = set(selected_cat_dates or [])
+    auto_type_is_cat = is_cat_animal_type(animal_type)
 
     for day_offset in range(max_days_to_scan):
-        curr_date = tomorrow + timedelta(days=day_offset)
-        if curr_date not in occupied_dates:
-            return combine_slot(curr_date, first_slot)
+        curr_date = start_date + timedelta(days=day_offset)
+        occupied_for_day = set(occupied_slots.get(curr_date, set()))
+        occupied_for_day.update(selected_slots_by_date.get(curr_date, set()))
+        has_posts = bool(occupied_for_day)
+        has_cat = curr_date in cat_dates or curr_date in selected_cat_dates
 
-    return combine_slot(tomorrow + timedelta(days=max_days_to_scan), first_slot)
+        free_slots = [
+            slot_time
+            for slot_time in slot_times
+            if slot_time.strftime("%H:%M") not in occupied_for_day
+            and combine_slot(curr_date, slot_time) >= start_at
+        ]
+        if not free_slots:
+            continue
+
+        if animal_type is None:
+            if not has_posts:
+                return combine_slot(curr_date, free_slots[0])
+            continue
+
+        if auto_type_is_cat:
+            if not has_cat:
+                return combine_slot(curr_date, free_slots[0])
+            continue
+
+        if has_cat or not has_posts:
+            return combine_slot(curr_date, free_slots[0])
+
+    return combine_slot(start_date + timedelta(days=max_days_to_scan), first_slot)
 
 async def create_post(
     session: AsyncSession,

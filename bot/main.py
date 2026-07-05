@@ -8,6 +8,7 @@ from bot.handlers.base import base_router
 from bot.handlers.suggest import suggest_router
 from bot.handlers.admin import admin_router
 from bot.handlers.identify import identify_router
+from bot.handlers.tournament import tournament_router
 from bot.services.publisher import publisher_loop
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,7 @@ async def main():
 
     dp.include_router(base_router)
     dp.include_router(identify_router)
+    dp.include_router(tournament_router)
     dp.include_router(suggest_router)
     dp.include_router(admin_router)
 

@@ -89,6 +89,98 @@ async def test_next_auto_slot_uses_empty_days_not_partially_free_days(db_session
 
 
 @pytest.mark.asyncio
+async def test_cat_auto_slot_uses_nearest_day_without_cat(db_session, monkeypatch):
+    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    user = User(telegram_id=1001, username="user", full_name="User")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        Post(
+            user_id=user.id,
+            file_id="bird",
+            animal_type="Птица",
+            status=PostStatus.APPROVED,
+            schedule_time=crud.combine_slot(tomorrow, time(10, 0)),
+        )
+    )
+    await db_session.commit()
+
+    auto_slot = await crud.get_next_auto_slot(db_session, animal_type="Кот")
+
+    assert auto_slot == crud.combine_slot(tomorrow, time(12, 0))
+
+
+@pytest.mark.asyncio
+async def test_cat_auto_slot_skips_days_that_already_have_cat(db_session, monkeypatch):
+    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    user = User(telegram_id=1001, username="user", full_name="User")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        Post(
+            user_id=user.id,
+            file_id="cat",
+            animal_type="Кот",
+            status=PostStatus.APPROVED,
+            schedule_time=crud.combine_slot(tomorrow, time(10, 0)),
+        )
+    )
+    await db_session.commit()
+
+    auto_slot = await crud.get_next_auto_slot(db_session, animal_type="Кот")
+
+    assert auto_slot == crud.combine_slot(tomorrow + timedelta(days=1), time(10, 0))
+
+
+@pytest.mark.asyncio
+async def test_non_cat_auto_slot_can_share_day_with_cat(db_session, monkeypatch):
+    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    user = User(telegram_id=1001, username="user", full_name="User")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        Post(
+            user_id=user.id,
+            file_id="cat",
+            animal_type="Кот",
+            status=PostStatus.APPROVED,
+            schedule_time=crud.combine_slot(tomorrow, time(10, 0)),
+        )
+    )
+    await db_session.commit()
+
+    auto_slot = await crud.get_next_auto_slot(db_session, animal_type="Птица")
+
+    assert auto_slot == crud.combine_slot(tomorrow, time(12, 0))
+
+
+@pytest.mark.asyncio
+async def test_non_cat_auto_slot_skips_non_empty_days_without_cat(db_session, monkeypatch):
+    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    user = User(telegram_id=1001, username="user", full_name="User")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        Post(
+            user_id=user.id,
+            file_id="bird",
+            animal_type="Птица",
+            status=PostStatus.APPROVED,
+            schedule_time=crud.combine_slot(tomorrow, time(10, 0)),
+        )
+    )
+    await db_session.commit()
+
+    auto_slot = await crud.get_next_auto_slot(db_session, animal_type="Рыба")
+
+    assert auto_slot == crud.combine_slot(tomorrow + timedelta(days=1), time(10, 0))
+
+
+@pytest.mark.asyncio
 async def test_animal_type_options_are_ordered_by_photo_count(db_session):
     db_session.add_all(
         [
@@ -130,6 +222,54 @@ async def test_canonical_and_ensure_animal_type_reuse_existing_rows(db_session):
 
     assert canonical == "Кот"
     assert ensured.id == existing.id
+
+
+@pytest.mark.asyncio
+async def test_animal_type_homoglyphs_reuse_existing_canonical_row(db_session):
+    existing = AnimalType(name="Насекомое", is_primary=False, sort_order=10)
+    db_session.add(existing)
+    await db_session.commit()
+
+    canonical = await crud.canonical_animal_type(db_session, " Нaceкомое ")
+    ensured = await crud.ensure_animal_type(db_session, "Нaceкомое")
+
+    assert canonical == "Насекомое"
+    assert ensured.id == existing.id
+
+
+@pytest.mark.asyncio
+async def test_canonical_animal_type_does_not_echo_existing_homoglyph_row(db_session):
+    existing = AnimalType(name="Нaceкомое", is_primary=False, sort_order=10)
+    db_session.add(existing)
+    await db_session.commit()
+
+    canonical = await crud.canonical_animal_type(db_session, "Насекомое")
+    ensured = await crud.ensure_animal_type(db_session, "Насекомое")
+    await db_session.refresh(existing)
+
+    assert canonical == "Насекомое"
+    assert ensured.id == existing.id
+    assert existing.name == "Насекомое"
+
+
+@pytest.mark.asyncio
+async def test_animal_type_homoglyphs_can_create_safe_cyrillic_name(db_session):
+    canonical = await crud.canonical_animal_type(db_session, "Жyк")
+    ensured = await crud.ensure_animal_type(db_session, "Жyк")
+
+    assert canonical == "Жук"
+    assert ensured is not None
+    assert ensured.name == "Жук"
+
+
+@pytest.mark.asyncio
+async def test_animal_type_rejects_unsupported_latin_after_homoglyph_fix(db_session):
+    canonical = await crud.canonical_animal_type(db_session, "wомбат")
+    ensured = await crud.ensure_animal_type(db_session, "wомбат")
+
+    assert crud.animal_type_has_unsupported_latin("wомбат")
+    assert canonical == ""
+    assert ensured is None
 
 
 @pytest.mark.asyncio

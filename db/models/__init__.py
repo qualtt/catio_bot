@@ -11,6 +11,14 @@ from .photo_identification import (
     PhotoIdentificationBatchItem,
     PhotoIdentificationVote,
 )
+from .photo_tournament import (
+    PhotoTournament,
+    PhotoTournamentEntry,
+    PhotoTournamentMatch,
+    PhotoTournamentNotification,
+    PhotoTournamentRound,
+    PhotoTournamentVote,
+)
 
 __all__ = [
     "Base",
@@ -24,4 +32,10 @@ __all__ = [
     "PhotoIdentificationBatch",
     "PhotoIdentificationBatchItem",
     "PhotoIdentificationVote",
+    "PhotoTournament",
+    "PhotoTournamentEntry",
+    "PhotoTournamentMatch",
+    "PhotoTournamentNotification",
+    "PhotoTournamentRound",
+    "PhotoTournamentVote",
 ]

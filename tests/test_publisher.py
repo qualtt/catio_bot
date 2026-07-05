@@ -32,10 +32,16 @@ class FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_publish_post_sends_photo_without_caption():
+async def test_publish_post_sends_photo_without_caption(monkeypatch):
     bot = FakeBot()
     session = FakeSession()
-    post = Post(id=1, user_id=1, file_id="telegram-file-id", animal_type="кот")
+    post = Post(id=1, user_id=1, file_id="telegram-file-id", animal_type="кот", photo_id=44)
+    indexed = {}
+
+    async def fake_create_channel_history_item(*args, **kwargs):
+        indexed.update(kwargs)
+
+    monkeypatch.setattr("bot.services.publisher.create_channel_history_item", fake_create_channel_history_item)
 
     await publish_post(bot, session, post)
 
@@ -48,3 +54,9 @@ async def test_publish_post_sends_photo_without_caption():
     assert post.status == PostStatus.PUBLISHED
     assert post.message_id == 123
     assert session.committed is True
+    assert indexed["chat_id"] == -100123
+    assert indexed["message_id"] == 123
+    assert indexed["photo_id"] == 44
+    assert indexed["file_id"] == "telegram-file-id"
+    assert indexed["animal_type"] == "кот"
+    assert indexed["published_at"] is not None

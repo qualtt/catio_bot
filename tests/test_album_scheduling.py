@@ -216,7 +216,7 @@ async def test_create_album_posts_preserves_per_photo_schedule_flags(db_session)
 
 
 @pytest.mark.asyncio
-async def test_album_auto_schedule_uses_empty_days_not_partially_free_days(db_session, monkeypatch):
+async def test_album_auto_schedule_non_cats_can_share_cat_days(db_session, monkeypatch):
     monkeypatch.setattr(suggest.config, "DAILY_SLOT_TIMES", "10:00,12:00")
     tomorrow = suggest.now_in_app_tz().date() + suggest.timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
@@ -233,11 +233,31 @@ async def test_album_auto_schedule_uses_empty_days_not_partially_free_days(db_se
     )
     await db_session.commit()
 
-    slots = await suggest._allocate_album_schedule_slots(db_session, 2)
+    slots = await suggest._allocate_album_schedule_slots(
+        db_session,
+        [{"animal_type": "Птица"}, {"animal_type": "Рыба"}],
+    )
 
     assert slots == [
+        combine_slot(tomorrow, time(12, 0)),
         combine_slot(tomorrow + suggest.timedelta(days=1), time(10, 0)),
-        combine_slot(tomorrow + suggest.timedelta(days=2), time(10, 0)),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_album_auto_schedule_spreads_cats_across_days(db_session, monkeypatch):
+    monkeypatch.setattr(suggest.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    tomorrow = suggest.now_in_app_tz().date() + suggest.timedelta(days=1)
+
+    slots = await suggest._allocate_album_schedule_slots(
+        db_session,
+        [{"animal_type": "Кот"}, {"animal_type": "Птица"}, {"animal_type": "Кот"}],
+    )
+
+    assert slots == [
+        combine_slot(tomorrow, time(10, 0)),
+        combine_slot(tomorrow, time(12, 0)),
+        combine_slot(tomorrow + suggest.timedelta(days=1), time(10, 0)),
     ]
 
 

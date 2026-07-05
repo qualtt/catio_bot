@@ -2,7 +2,7 @@ import logging
 import re
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import CommandStart, Command
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
@@ -67,10 +67,7 @@ def _is_admin(message: Message) -> bool:
     return message.from_user.id == config.ADMIN_ID
 
 
-async def _photo_input(photo: Photo):
-    if photo.telegram_file_id:
-        return photo.telegram_file_id
-
+async def _downloaded_photo_input(photo: Photo) -> BufferedInputFile:
     photo_bytes = await download_photo(
         storage_bucket=photo.storage_bucket,
         storage_key=photo.storage_key,
@@ -79,10 +76,8 @@ async def _photo_input(photo: Photo):
     return BufferedInputFile(photo_bytes, filename=filename)
 
 
-async def _post_photo_input(post: Post):
-    if post.photo:
-        return await _photo_input(post.photo)
-    return post.file_id
+def _is_wrong_file_identifier(error: TelegramBadRequest) -> bool:
+    return "wrong file identifier" in str(error).lower()
 
 
 def _format_schedule(post: Post) -> str:
@@ -91,14 +86,32 @@ def _format_schedule(post: Post) -> str:
     return ensure_app_timezone(post.schedule_time).strftime("%Y-%m-%d %H:%M")
 
 
+async def _send_stored_photo(bot: Bot, *, chat_id: int, photo: Photo, caption: str) -> None:
+    if photo.telegram_file_id:
+        try:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo.telegram_file_id,
+                caption=caption,
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+        except TelegramBadRequest as error:
+            if not _is_wrong_file_identifier(error):
+                raise
+            logger.info("Telegram file_id for photo %s is invalid, falling back to storage", photo.id)
+
+    await bot.send_photo(
+        chat_id=chat_id,
+        photo=await _downloaded_photo_input(photo),
+        caption=caption,
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
 async def _send_photo_view(message: Message, bot: Bot, photo: Photo, *, caption: str) -> None:
     try:
-        await bot.send_photo(
-            chat_id=message.chat.id,
-            photo=await _photo_input(photo),
-            caption=caption,
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        await _send_stored_photo(bot, chat_id=message.chat.id, photo=photo, caption=caption)
     except Exception:
         logger.exception("Failed to send photo %s", photo.id)
         await message.answer(bot_content.message("photo_view_send_failed"), reply_markup=ReplyKeyboardRemove())
@@ -236,18 +249,22 @@ async def post_view_handler(message: Message, bot: Bot):
         return
 
     try:
-        await bot.send_photo(
-            chat_id=message.chat.id,
-            photo=await _post_photo_input(post),
-            caption=bot_content.message(
-                "post_view_caption",
-                post_id=post.id,
-                animal_type=post.animal_type,
-                status=bot_content.status_label(post.status),
-                schedule=_format_schedule(post),
-            ),
-            reply_markup=ReplyKeyboardRemove(),
+        caption = bot_content.message(
+            "post_view_caption",
+            post_id=post.id,
+            animal_type=post.animal_type,
+            status=bot_content.status_label(post.status),
+            schedule=_format_schedule(post),
         )
+        if post.photo:
+            await _send_stored_photo(bot, chat_id=message.chat.id, photo=post.photo, caption=caption)
+        else:
+            await bot.send_photo(
+                chat_id=message.chat.id,
+                photo=post.file_id,
+                caption=caption,
+                reply_markup=ReplyKeyboardRemove(),
+            )
     except Exception:
         logger.exception("Failed to send post %s", post.id)
         await message.answer(bot_content.message("photo_view_send_failed"), reply_markup=ReplyKeyboardRemove())

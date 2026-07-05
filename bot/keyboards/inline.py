@@ -22,6 +22,7 @@ def _two_column_rows(item_count: int, footer_count: int = 0) -> list[int]:
 def get_main_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("identify_old_photos"), callback_data="identify_next")
+    builder.button(text=bot_content.button("photo_tournament"), callback_data="tourn_current")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -239,8 +240,16 @@ async def get_admin_animal_change_kb(post_id: int) -> InlineKeyboardMarkup:
 
     for animal_type in animal_types:
         builder.button(text=animal_type.name, callback_data=f"admin_setanimal_{post_id}_{animal_type.id}")
+    builder.button(text=bot_content.button("custom_animal_type"), callback_data=f"admin_customanimal_{post_id}")
     builder.button(text=bot_content.button("back"), callback_data=f"admin_back_{post_id}")
-    builder.adjust(*_two_column_rows(len(animal_types), footer_count=1))
+    builder.adjust(*_two_column_rows(len(animal_types), footer_count=2))
+    return builder.as_markup()
+
+
+def get_admin_custom_animal_kb(post_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=bot_content.button("back"), callback_data=f"admin_back_{post_id}")
+    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -343,4 +352,26 @@ def get_identification_batch_kb(batch) -> InlineKeyboardMarkup:
         callback_data=f"ident_batch_reject_{batch.id}",
     )
     builder.adjust(*_two_column_rows(len(batch.items), footer_count=2))
+    return builder.as_markup()
+
+
+def get_tournament_start_kb(tournament_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=bot_content.button("tournament_vote"), callback_data=f"tourn_open_{tournament_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_tournament_match_kb(match) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=bot_content.button("tournament_pick_left"),
+        callback_data=f"tourn_vote_{match.id}_{match.left_entry_id}",
+    )
+    builder.button(
+        text=bot_content.button("tournament_pick_right"),
+        callback_data=f"tourn_vote_{match.id}_{match.right_entry_id}",
+    )
+    builder.button(text=bot_content.button("tournament_refresh"), callback_data=f"tourn_open_{match.tournament_id}")
+    builder.adjust(2, 1)
     return builder.as_markup()

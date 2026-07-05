@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
 from aiogram import Bot, F, Router
@@ -28,6 +28,7 @@ from bot.services.captions import (
 )
 from bot.services.photo_storage import hamming_distance, upload_telegram_photo
 from db.crud import (
+    animal_type_has_unsupported_latin,
     canonical_animal_type,
     combine_slot,
     create_photo,
@@ -37,9 +38,9 @@ from db.crud import (
     get_day_availability,
     get_free_slot_times,
     get_next_auto_slot,
-    get_occupied_dates,
     get_or_create_user,
     get_photo_by_telegram_unique_id,
+    is_cat_animal_type,
     now_in_app_tz,
     parse_daily_slot_times,
 )
@@ -499,46 +500,73 @@ async def _handle_album_custom_animal_type(message: Message, state: FSMContext, 
     await _continue_album_or_ask_schedule(bot, message.chat.id, state, items, index)
 
 
-async def _find_next_auto_slot_on_empty_day(session, start_at: datetime, selected_slots: set[datetime]) -> datetime:
-    max_days_to_scan = config.AUTO_POST_DAYS_AHEAD + 365
-    current_date = start_at.date()
-    first_slot = parse_daily_slot_times()[0]
-    occupied_dates = await get_occupied_dates(session, start_date=current_date, days=max_days_to_scan)
-    selected_dates = {slot.date() for slot in selected_slots}
+def _album_selected_cat_dates(
+    items: list[dict],
+    schedule_times: list[datetime | None],
+    *,
+    exclude_indices: set[int] | None = None,
+) -> set[date]:
+    exclude_indices = exclude_indices or set()
+    return {
+        schedule_time.date()
+        for index, schedule_time in enumerate(schedule_times)
+        if schedule_time is not None
+        and index not in exclude_indices
+        and index < len(items)
+        and is_cat_animal_type(items[index].get("animal_type"))
+    }
 
-    for day_offset in range(max_days_to_scan):
-        target_date = current_date + timedelta(days=day_offset)
-        if target_date in occupied_dates or target_date in selected_dates:
-            continue
 
-        candidate = combine_slot(target_date, first_slot)
-        if candidate >= start_at:
-            return candidate
-
-    return combine_slot(current_date + timedelta(days=max_days_to_scan), first_slot)
+async def _find_next_auto_slot(
+    session,
+    *,
+    animal_type: str | None,
+    start_at: datetime,
+    selected_slots: set[datetime],
+    selected_cat_dates: set[date],
+) -> datetime:
+    return await get_next_auto_slot(
+        session,
+        animal_type=animal_type,
+        start_at=start_at,
+        selected_slots=selected_slots,
+        selected_cat_dates=selected_cat_dates,
+    )
 
 
 async def _allocate_album_schedule_slots(
     session,
-    count: int,
+    items: list[dict],
     *,
     first_slot: datetime | None = None,
 ) -> list[datetime]:
     slots: list[datetime] = []
     selected_slots: set[datetime] = set()
+    selected_cat_dates: set[date] = set()
 
     if first_slot is not None:
         slots.append(first_slot)
         selected_slots.add(first_slot)
+        if items and is_cat_animal_type(items[0].get("animal_type")):
+            selected_cat_dates.add(first_slot.date())
         start_at = first_slot + timedelta(minutes=1)
     else:
         tomorrow = now_in_app_tz().date() + timedelta(days=1)
         start_at = combine_slot(tomorrow, time.min)
 
-    while len(slots) < count:
-        slot = await _find_next_auto_slot_on_empty_day(session, start_at, selected_slots)
+    while len(slots) < len(items):
+        animal_type = items[len(slots)].get("animal_type")
+        slot = await _find_next_auto_slot(
+            session,
+            animal_type=animal_type,
+            start_at=start_at,
+            selected_slots=selected_slots,
+            selected_cat_dates=selected_cat_dates,
+        )
         slots.append(slot)
         selected_slots.add(slot)
+        if is_cat_animal_type(animal_type):
+            selected_cat_dates.add(slot.date())
         start_at = slot + timedelta(minutes=1)
 
     return slots
@@ -976,6 +1004,10 @@ async def handle_extra_animal_type(callback: CallbackQuery, state: FSMContext, b
 @suggest_router.message(SuggestState.waiting_for_custom_animal_type)
 async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bot):
     max_length = bot_content.animal_type_max_length()
+    if animal_type_has_unsupported_latin(message.text):
+        await message.answer(bot_content.message("invalid_custom_animal_type_layout"))
+        return
+
     async with async_session() as session:
         animal_type = await canonical_animal_type(session, message.text)
 
@@ -1009,7 +1041,7 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
     if _is_album_submission(data):
         items = _album_items(data)
         async with async_session() as session:
-            schedule_times = await _allocate_album_schedule_slots(session, len(items))
+            schedule_times = await _allocate_album_schedule_slots(session, items)
             posts = await _create_album_posts(
                 session,
                 data=data,
@@ -1037,7 +1069,7 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
     user_id = data.get("user_id")
 
     async with async_session() as session:
-        schedule_time = await get_next_auto_slot(session)
+        schedule_time = await get_next_auto_slot(session, animal_type=animal_type)
         post = await create_post(
             session,
             user_id=user_id,
@@ -1239,14 +1271,17 @@ async def handle_album_auto_current(callback: CallbackQuery, state: FSMContext, 
         await callback.answer()
         return
 
-    _, _, _, schedule_index = _album_schedule_context(data)
+    items, schedule_times, _, schedule_index = _album_schedule_context(data)
     selected_slots = _album_selected_slots(data, exclude_index=schedule_index)
+    selected_cat_dates = _album_selected_cat_dates(items, schedule_times, exclude_indices={schedule_index})
     tomorrow = now_in_app_tz().date() + timedelta(days=1)
     async with async_session() as session:
-        schedule_time = await _find_next_auto_slot_on_empty_day(
+        schedule_time = await _find_next_auto_slot(
             session,
-            combine_slot(tomorrow, time.min),
-            selected_slots,
+            animal_type=items[schedule_index].get("animal_type"),
+            start_at=combine_slot(tomorrow, time.min),
+            selected_slots=selected_slots,
+            selected_cat_dates=selected_cat_dates,
         )
 
     await _save_album_schedule_and_continue(
@@ -1277,15 +1312,25 @@ async def handle_album_auto_remaining(callback: CallbackQuery, state: FSMContext
         for index, schedule_time in enumerate(schedule_times)
         if schedule_time is not None and index not in remaining_indices
     }
+    selected_cat_dates = _album_selected_cat_dates(items, schedule_times, exclude_indices=set(remaining_indices))
     tomorrow = now_in_app_tz().date() + timedelta(days=1)
     start_at = combine_slot(tomorrow, time.min)
 
     async with async_session() as session:
         for index in remaining_indices:
-            schedule_time = await _find_next_auto_slot_on_empty_day(session, start_at, selected_slots)
+            animal_type = items[index].get("animal_type")
+            schedule_time = await _find_next_auto_slot(
+                session,
+                animal_type=animal_type,
+                start_at=start_at,
+                selected_slots=selected_slots,
+                selected_cat_dates=selected_cat_dates,
+            )
             schedule_times[index] = schedule_time
             schedule_auto_flags[index] = True
             selected_slots.add(schedule_time)
+            if is_cat_animal_type(animal_type):
+                selected_cat_dates.add(schedule_time.date())
             start_at = schedule_time + timedelta(minutes=1)
 
     state_data = _album_schedule_state(schedule_times, schedule_auto_flags, schedule_index)

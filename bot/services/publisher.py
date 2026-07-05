@@ -11,11 +11,19 @@ from bot.config import config
 from bot.content import bot_content
 from bot.handlers.identify import create_and_send_ready_identification_batches
 from bot.services.photo_storage import download_photo
-from db.crud import now_in_app_tz
+from bot.services.tournaments import run_tournament_maintenance
+from db.crud import create_channel_history_item, now_in_app_tz
 from db.database import async_session
 from db.models.post import Post, PostStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _channel_history_chat_id() -> int | None:
+    try:
+        return int(config.CHANNEL_ID)
+    except (TypeError, ValueError):
+        return None
 
 
 async def post_photo_input(post: Post):
@@ -31,6 +39,7 @@ async def post_photo_input(post: Post):
 
 
 async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> None:
+    actual_published_at = published_at or now_in_app_tz()
     try:
         photo = await post_photo_input(post)
         message = await bot.send_photo(
@@ -45,8 +54,21 @@ async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> N
     post.status = PostStatus.PUBLISHED
     post.message_id = message.message_id
     if published_at is not None:
-        post.schedule_time = published_at
+        post.schedule_time = actual_published_at
     await session.commit()
+
+    try:
+        await create_channel_history_item(
+            session,
+            chat_id=_channel_history_chat_id(),
+            message_id=message.message_id,
+            photo_id=post.photo_id,
+            file_id=post.file_id,
+            published_at=actual_published_at,
+            animal_type=post.animal_type,
+        )
+    except Exception:
+        logger.exception("Failed to index published post %s in channel_history", post.id)
 
     if post.user:
         try:
@@ -101,6 +123,7 @@ async def publisher_loop(bot: Bot) -> None:
             review_batch_count = await create_and_send_ready_identification_batches(bot, min_size=1)
             if review_batch_count:
                 logger.info("Sent %s old-photo identification review batches", review_batch_count)
+            await run_tournament_maintenance(bot)
         except asyncio.CancelledError:
             raise
         except Exception:

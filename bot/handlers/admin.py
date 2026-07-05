@@ -16,6 +16,7 @@ from bot.keyboards.inline import (
     get_admin_album_view_kb,
     get_admin_animal_change_kb,
     get_admin_approval_kb,
+    get_admin_custom_animal_kb,
     get_admin_menu_kb,
     get_admin_post_manage_kb,
     get_admin_rejection_reason_kb,
@@ -25,7 +26,16 @@ from bot.keyboards.inline import (
 from bot.services.captions import admin_album_control_text, admin_album_view_caption, format_schedule, submission_caption
 from bot.services.publisher import publish_post
 from bot.services.scoring import award_post_approval_score
-from db.crud import app_timezone, combine_slot, ensure_animal_type, get_animal_type_name, get_next_auto_slot, now_in_app_tz
+from db.crud import (
+    animal_type_has_unsupported_latin,
+    app_timezone,
+    canonical_animal_type,
+    combine_slot,
+    ensure_animal_type,
+    get_animal_type_name,
+    get_next_auto_slot,
+    now_in_app_tz,
+)
 from db.database import async_session
 from db.models.post import Post, PostStatus
 
@@ -35,6 +45,7 @@ admin_router = Router()
 class AdminState(StatesGroup):
     waiting_for_reschedule_time = State()
     waiting_for_rejection_reason = State()
+    waiting_for_custom_animal_type = State()
 
 
 def is_admin(callback: CallbackQuery) -> bool:
@@ -360,6 +371,46 @@ async def edit_admin_rejection_result(
     )
 
 
+async def edit_admin_animal_change_result(
+    bot: Bot,
+    session,
+    post: Post,
+    *,
+    chat_id: int,
+    message_id: int,
+    is_album_control: bool,
+    is_album_view: bool = False,
+) -> None:
+    if is_album_control:
+        posts = await load_submission_group_posts(session, post)
+        if is_album_view:
+            await bot.edit_message_media(
+                chat_id=chat_id,
+                message_id=message_id,
+                media=InputMediaPhoto(
+                    media=post.file_id,
+                    caption=admin_album_view_caption(posts, post, author=post_author(post)),
+                ),
+                reply_markup=get_admin_album_view_kb(posts, post),
+            )
+            return
+
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=admin_album_control_text(posts, author=post_author(post)),
+            reply_markup=get_admin_album_kb(posts),
+        )
+        return
+
+    await bot.edit_message_caption(
+        chat_id=chat_id,
+        message_id=message_id,
+        caption=admin_post_caption(post),
+        reply_markup=get_admin_approval_kb(post.id),
+    )
+
+
 async def reject_post(session, post: Post, *, reason: str | None = None) -> None:
     post.status = PostStatus.REJECTED
     await session.commit()
@@ -632,7 +683,7 @@ async def handle_admin_approve(callback: CallbackQuery, bot: Bot):
             return
 
         if post.schedule_time is None:
-            schedule_time = await get_next_auto_slot(session)
+            schedule_time = await get_next_auto_slot(session, animal_type=post.animal_type)
             post.schedule_time = schedule_time
         else:
             schedule_time = post.schedule_time
@@ -833,6 +884,43 @@ async def handle_admin_change(callback: CallbackQuery):
     await callback.answer()
 
 
+@admin_router.callback_query(F.data.startswith("admin_customanimal_"))
+async def handle_admin_custom_animal_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    try:
+        post_id = int(callback.data.rsplit("_", 1)[1])
+    except (TypeError, ValueError):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+        if not post or post.status != PostStatus.PENDING:
+            await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+            return
+
+        is_album_control = callback_is_album_control(callback, post)
+
+    await state.set_state(AdminState.waiting_for_custom_animal_type)
+    await state.update_data(
+        custom_animal_post_id=post_id,
+        custom_animal_message_chat_id=callback.message.chat.id,
+        custom_animal_message_id=callback.message.message_id,
+        custom_animal_is_album_control=is_album_control,
+        custom_animal_is_album_view=bool(callback.message.photo),
+    )
+
+    prompt = bot_content.message("admin_custom_animal_type_prompt", post_id=post_id)
+    if is_album_control and callback.message.text:
+        await callback.message.edit_text(prompt, reply_markup=get_admin_custom_animal_kb(post_id))
+    else:
+        await callback.message.edit_caption(caption=prompt, reply_markup=get_admin_custom_animal_kb(post_id))
+    await callback.answer()
+
+
 @admin_router.callback_query(F.data.startswith("admin_back_"))
 async def handle_admin_back(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
@@ -855,8 +943,67 @@ async def handle_admin_back(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@admin_router.message(AdminState.waiting_for_custom_animal_type)
+async def handle_admin_custom_animal_text(message: Message, state: FSMContext, bot: Bot):
+    if message.from_user.id != config.ADMIN_ID:
+        await message.answer(bot_content.message("not_admin"))
+        return
+
+    if animal_type_has_unsupported_latin(message.text):
+        await message.answer(bot_content.message("invalid_custom_animal_type_layout"))
+        return
+
+    async with async_session() as session:
+        animal_type = await canonical_animal_type(session, message.text)
+
+    if not animal_type:
+        await message.answer(bot_content.message("invalid_custom_animal_type"))
+        return
+
+    if animal_type.casefold() == bot_content.other_animal_label().casefold():
+        await message.answer(bot_content.message("invalid_custom_animal_type"))
+        return
+
+    max_length = bot_content.animal_type_max_length()
+    if len(animal_type) > max_length:
+        await message.answer(bot_content.message("custom_animal_type_too_long", max_length=max_length))
+        return
+
+    data = await state.get_data()
+    post_id = int(data.get("custom_animal_post_id") or 0)
+    chat_id = int(data.get("custom_animal_message_chat_id") or message.chat.id)
+    message_id = int(data.get("custom_animal_message_id") or 0)
+    is_album_control = bool(data.get("custom_animal_is_album_control"))
+    is_album_view = bool(data.get("custom_animal_is_album_view"))
+
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+        if not post or post.status != PostStatus.PENDING:
+            await state.clear()
+            await message.answer(bot_content.message("post_processed_or_missing"))
+            return
+
+        post.animal_type = animal_type
+        await ensure_animal_type(session, animal_type)
+        await session.commit()
+
+        if message_id:
+            await edit_admin_animal_change_result(
+                bot,
+                session,
+                post,
+                chat_id=chat_id,
+                message_id=message_id,
+                is_album_control=is_album_control,
+                is_album_view=is_album_view,
+            )
+
+    await state.clear()
+    await message.answer(bot_content.message("animal_changed"))
+
+
 @admin_router.callback_query(F.data.startswith("admin_setanimal_"))
-async def handle_admin_set_animal(callback: CallbackQuery):
+async def handle_admin_set_animal(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
@@ -891,4 +1038,5 @@ async def handle_admin_set_animal(callback: CallbackQuery):
                 reply_markup=get_admin_approval_kb(post_id),
             )
 
+    await state.clear()
     await callback.answer(bot_content.message("animal_changed"))
