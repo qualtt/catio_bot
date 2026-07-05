@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import BinaryIO
 
 from pyrogram import Client
@@ -14,7 +15,7 @@ from bot.services.photo_storage import photo_metadata_from_bytes, upload_photo_b
 from db.crud import (
     create_channel_history_item,
     create_photo,
-    get_channel_history_item_by_message_id,
+    get_channel_history_item,
     get_photo_by_telegram_unique_id,
     update_photo_metadata,
 )
@@ -103,6 +104,18 @@ def message_photo_ids(message: Message) -> tuple[str, str | None]:
     return message.photo.file_id, message.photo.file_unique_id
 
 
+def message_chat_id(message: Message) -> int | None:
+    return getattr(getattr(message, "chat", None), "id", None)
+
+
+def message_published_at(message: Message) -> datetime | None:
+    if message.date is None:
+        return None
+    if message.date.tzinfo is None:
+        return message.date.replace(tzinfo=UTC)
+    return message.date.astimezone(UTC)
+
+
 def should_backfill_photo(photo: Photo) -> bool:
     return (
         photo.sha256 is None
@@ -149,11 +162,23 @@ async def import_photo_message(app: Client, message: Message, dry_run: bool) -> 
     file_id, file_unique_id = message_photo_ids(message)
 
     if dry_run:
-        logger.info("Would import message_id=%s file_unique_id=%s", message.id, file_unique_id)
+        logger.info(
+            "Would import chat_id=%s message_id=%s file_unique_id=%s published_at=%s media_group_id=%s caption=%s",
+            message_chat_id(message),
+            message.id,
+            file_unique_id,
+            message_published_at(message),
+            message.media_group_id,
+            bool(message.caption),
+        )
         return ImportResult(imported=True)
 
     async with async_session() as session:
-        existing_history = await get_channel_history_item_by_message_id(session, message.id)
+        existing_history = await get_channel_history_item(
+            session,
+            chat_id=message_chat_id(message),
+            message_id=message.id,
+        )
         photo = await get_photo_by_telegram_unique_id(session, file_unique_id)
 
     uploaded = False
@@ -189,9 +214,13 @@ async def import_photo_message(app: Client, message: Message, dry_run: bool) -> 
     async with async_session() as session:
         await create_channel_history_item(
             session,
+            chat_id=message_chat_id(message),
             message_id=message.id,
             file_id=file_id,
             photo_id=photo.id,
+            published_at=message_published_at(message),
+            caption=message.caption,
+            media_group_id=message.media_group_id,
         )
 
     logger.info(
