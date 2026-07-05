@@ -151,7 +151,7 @@
     "identify_photo_caption": "Кто на фото?",
     "identify_no_photos": "Пока нет фото для опознания.",
     "identify_assignment_expired": "Это фото уже недоступно. Возьмите следующее.",
-    "identify_thanks": "Спасибо! Ваш вариант: {animal_type}.",
+    "identify_thanks": "Спасибо! Ваш вариант: {animal_type}. Баллы начислятся после проверки админом.",
     "identify_already_answered": "Ответ уже учтен: {animal_type}.",
     "identification_batch_photo_caption": "{number}. Предложенный вид: {animal_type}",
     "identification_batch_admin_control": "Пачка #{batch_id}: {animal_type}\nФото: {count}\nНажмите номера фото, которые не подходят, затем подтвердите пачку.",

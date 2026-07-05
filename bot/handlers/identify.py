@@ -184,7 +184,7 @@ async def _submit_identification_answer(
     )
 
     if result.queued_for_review:
-        await create_and_send_ready_identification_batches(bot)
+        await create_and_send_ready_identification_batches(bot, min_size=1)
 
 
 @identify_router.callback_query(F.data.startswith("identify_animal_id_"))

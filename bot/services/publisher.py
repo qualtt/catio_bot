@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from bot.config import config
 from bot.content import bot_content
+from bot.handlers.identify import create_and_send_ready_identification_batches
 from bot.services.photo_storage import download_photo
 from db.crud import now_in_app_tz
 from db.database import async_session
@@ -97,6 +98,9 @@ async def publisher_loop(bot: Bot) -> None:
             published_count = await publish_due_posts(bot)
             if published_count:
                 logger.info("Published %s scheduled posts", published_count)
+            review_batch_count = await create_and_send_ready_identification_batches(bot, min_size=1)
+            if review_batch_count:
+                logger.info("Sent %s old-photo identification review batches", review_batch_count)
         except asyncio.CancelledError:
             raise
         except Exception:
