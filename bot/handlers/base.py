@@ -13,6 +13,7 @@ base_router = Router()
 
 async def remove_legacy_reply_keyboard(message: Message) -> None:
     await message.answer(
+        bot_content.message("reply_keyboard_removed"),
         reply_markup=ReplyKeyboardRemove(),
     )
 

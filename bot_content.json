@@ -73,6 +73,7 @@
     "top_line": "{position}. {name}: {score}",
     "cancelled": "Текущая отправка отменена.",
     "nothing_to_cancel": "Сейчас нечего отменять.",
+    "reply_keyboard_removed": "Старая клавиатура убрана.",
     "ask_animal_type": "Кто на фото?",
     "album_photo_prompt": "Фото {current} из {total}. Кто на фото?",
     "album_duplicate_warning": "Важно: несколько фото одного и того же животного не будут одобрены. Если в альбоме повторы, лучше оставить один лучший кадр.",
