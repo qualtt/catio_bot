@@ -1,6 +1,9 @@
+import logging
+
 from aiogram import Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from bot.content import bot_content
 from bot.keyboards.inline import get_main_menu_kb
@@ -9,13 +12,29 @@ from db.crud import get_or_create_user, get_recent_user_posts, get_top_users, ge
 from db.models.post import PostStatus
 
 base_router = Router()
+logger = logging.getLogger(__name__)
 
 
-async def remove_legacy_reply_keyboard(message: Message) -> None:
-    await message.answer(
-        bot_content.message("reply_keyboard_removed"),
+async def answer_with_legacy_reply_keyboard_removed(
+    message: Message,
+    text: str,
+    *,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    **kwargs,
+) -> Message:
+    sent = await message.answer(
+        text,
         reply_markup=ReplyKeyboardRemove(),
+        **kwargs,
     )
+    if reply_markup is None:
+        return sent
+
+    try:
+        await sent.edit_reply_markup(reply_markup=reply_markup)
+    except TelegramAPIError:
+        logger.exception("Failed to attach inline keyboard after removing reply keyboard")
+    return sent
 
 @base_router.message(CommandStart())
 async def start_handler(message: Message):
@@ -27,13 +46,20 @@ async def start_handler(message: Message):
             full_name=message.from_user.full_name
         )
     
-    await remove_legacy_reply_keyboard(message)
-    await message.answer(bot_content.message("start"), reply_markup=get_main_menu_kb(), parse_mode="HTML")
+    await answer_with_legacy_reply_keyboard_removed(
+        message,
+        bot_content.message("start"),
+        reply_markup=get_main_menu_kb(),
+        parse_mode="HTML",
+    )
 
 @base_router.message(Command("help"))
 async def help_handler(message: Message):
-    await remove_legacy_reply_keyboard(message)
-    await message.answer(bot_content.message("help"), reply_markup=get_main_menu_kb())
+    await answer_with_legacy_reply_keyboard_removed(
+        message,
+        bot_content.message("help"),
+        reply_markup=get_main_menu_kb(),
+    )
 
 
 @base_router.message(Command("profile"))

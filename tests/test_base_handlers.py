@@ -1,8 +1,20 @@
 import pytest
-from aiogram.types import ReplyKeyboardRemove
+from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardRemove
 
-from bot.content import bot_content
-from bot.handlers.base import remove_legacy_reply_keyboard
+from bot.handlers.base import answer_with_legacy_reply_keyboard_removed
+
+
+class DummySentMessage:
+    def __init__(self):
+        self.edited_reply_markups = []
+
+    async def edit_reply_markup(self, reply_markup=None, **kwargs):
+        self.edited_reply_markups.append(
+            {
+                "reply_markup": reply_markup,
+                "kwargs": kwargs,
+            }
+        )
 
 
 class DummyMessage:
@@ -10,25 +22,32 @@ class DummyMessage:
         self.answers = []
 
     async def answer(self, text, reply_markup=None, **kwargs):
+        sent = DummySentMessage()
         self.answers.append(
             {
                 "text": text,
                 "reply_markup": reply_markup,
                 "kwargs": kwargs,
+                "sent": sent,
             }
         )
+        return sent
 
 
 @pytest.mark.asyncio
-async def test_remove_legacy_reply_keyboard_sends_required_text():
+async def test_answer_with_legacy_reply_keyboard_removed_keeps_single_visible_message():
     message = DummyMessage()
+    inline_markup = InlineKeyboardMarkup(inline_keyboard=[])
 
-    await remove_legacy_reply_keyboard(message)
+    sent = await answer_with_legacy_reply_keyboard_removed(
+        message,
+        "hello",
+        reply_markup=inline_markup,
+        parse_mode="HTML",
+    )
 
-    assert message.answers == [
-        {
-            "text": bot_content.message("reply_keyboard_removed"),
-            "reply_markup": ReplyKeyboardRemove(),
-            "kwargs": {},
-        }
-    ]
+    assert len(message.answers) == 1
+    assert message.answers[0]["text"] == "hello"
+    assert message.answers[0]["reply_markup"] == ReplyKeyboardRemove()
+    assert message.answers[0]["kwargs"] == {"parse_mode": "HTML"}
+    assert sent.edited_reply_markups == [{"reply_markup": inline_markup, "kwargs": {}}]
