@@ -57,7 +57,7 @@ def test_duplicate_rejection_reason_can_be_selected_with_short_text():
     reason = normalize_duplicate_rejection_reason(" есть копия ", post)
 
     assert reason == duplicate_rejection_reason(post)
-    assert reason == "копия уже известного фото #42"
+    assert reason == "копия уже известного фото /photo_42"
 
 
 def test_album_rejection_text_uses_album_wording():

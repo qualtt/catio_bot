@@ -1,7 +1,12 @@
 import pytest
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardRemove
 
-from bot.handlers.base import answer_with_legacy_reply_keyboard_removed
+from bot.handlers.base import (
+    PHOTO_COMMAND_PATTERN,
+    POST_COMMAND_PATTERN,
+    _command_id,
+    answer_with_legacy_reply_keyboard_removed,
+)
 
 
 class DummySentMessage:
@@ -51,3 +56,10 @@ async def test_answer_with_legacy_reply_keyboard_removed_keeps_single_visible_me
     assert message.answers[0]["reply_markup"] == ReplyKeyboardRemove()
     assert message.answers[0]["kwargs"] == {"parse_mode": "HTML"}
     assert sent.edited_reply_markups == [{"reply_markup": inline_markup, "kwargs": {}}]
+
+
+def test_view_command_ids_are_parsed_with_optional_bot_username():
+    assert _command_id("/photo_1528", PHOTO_COMMAND_PATTERN) == 1528
+    assert _command_id("/photo_1528@catio_bot", PHOTO_COMMAND_PATTERN) == 1528
+    assert _command_id("/post_42", POST_COMMAND_PATTERN) == 42
+    assert _command_id("/photo_nope", PHOTO_COMMAND_PATTERN) is None

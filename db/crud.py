@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from db.models.animal_type import AnimalType
 from db.models.channel_history import ChannelHistory
 from db.models.photo import Photo
@@ -170,6 +171,63 @@ async def get_photo_by_sha256(session: AsyncSession, sha256: str | None) -> Phot
         return None
 
     stmt = select(Photo).where(Photo.sha256 == sha256)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def get_photo_by_id(session: AsyncSession, photo_id: int) -> Photo | None:
+    return await session.get(Photo, photo_id)
+
+
+async def photo_has_public_usage(session: AsyncSession, photo_id: int) -> bool:
+    history_count = await session.scalar(
+        select(func.count(ChannelHistory.id)).where(ChannelHistory.photo_id == photo_id)
+    )
+    if history_count:
+        return True
+
+    published_post_count = await session.scalar(
+        select(func.count(Post.id)).where(
+            Post.photo_id == photo_id,
+            Post.status == PostStatus.PUBLISHED,
+        )
+    )
+    return bool(published_post_count)
+
+
+async def user_can_view_photo(
+    session: AsyncSession,
+    *,
+    photo_id: int,
+    telegram_id: int,
+    is_admin: bool = False,
+) -> bool:
+    if is_admin:
+        return True
+
+    if await photo_has_public_usage(session, photo_id):
+        return True
+
+    own_post_count = await session.scalar(
+        select(func.count(Post.id))
+        .join(User, User.id == Post.user_id)
+        .where(
+            Post.photo_id == photo_id,
+            User.telegram_id == telegram_id,
+        )
+    )
+    return bool(own_post_count)
+
+
+async def get_random_public_photo(session: AsyncSession) -> Photo | None:
+    stmt = (
+        select(Photo)
+        .where(
+            (Photo.channel_history_items.any())
+            | (Photo.posts.any(Post.status == PostStatus.PUBLISHED))
+        )
+        .order_by(func.random())
+        .limit(1)
+    )
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
@@ -557,6 +615,15 @@ async def get_recent_user_posts(session: AsyncSession, user_id: int, limit: int 
         .limit(limit)
     )
     return list((await session.execute(stmt)).scalars())
+
+
+async def get_post_by_id(session: AsyncSession, post_id: int) -> Post | None:
+    stmt = (
+        select(Post)
+        .options(selectinload(Post.user), selectinload(Post.photo))
+        .where(Post.id == post_id)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 async def get_top_users(session: AsyncSession, limit: int = 10) -> list[User]:

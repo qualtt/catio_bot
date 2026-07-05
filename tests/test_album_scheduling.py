@@ -71,7 +71,7 @@ def test_photo_type_prompts_include_duplicate_warning_before_type_selection():
     assert single_text.startswith("Кто на фото?")
     assert "точный дубль" in single_text.lower()
     assert album_text.startswith("Фото 1 из 1. Кто на фото?")
-    assert "Похоже на уже известное фото #99" in album_text
+    assert "Похоже на уже известное фото /photo_99" in album_text
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_duplicate_original_is_sent_to_admin_for_comparison():
         {
             "chat_id": 1,
             "photo": "original-file-id",
-            "caption": "Оригинал для сравнения с заявкой #7: фото #42.",
+            "caption": "Оригинал для сравнения с заявкой /post_7: фото /photo_42.",
         }
     ]
 
@@ -110,7 +110,7 @@ async def test_duplicate_original_missing_file_id_sends_admin_notice():
     assert bot.sent_messages == [
         {
             "chat_id": 1,
-            "text": "Оригинал для сравнения с заявкой #7 не удалось отправить: у фото #42 нет Telegram file_id.",
+            "text": "Оригинал для сравнения с заявкой /post_7 не удалось отправить: у фото /photo_42 нет Telegram file_id.",
         }
     ]
 

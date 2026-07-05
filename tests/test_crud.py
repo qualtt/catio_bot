@@ -4,6 +4,8 @@ import pytest
 
 from db import crud
 from db.models.animal_type import AnimalType
+from db.models.channel_history import ChannelHistory
+from db.models.photo import Photo
 from db.models.post import Post, PostStatus
 from db.models.user import User
 
@@ -128,3 +130,51 @@ async def test_canonical_and_ensure_animal_type_reuse_existing_rows(db_session):
 
     assert canonical == "Кот"
     assert ensured.id == existing.id
+
+
+@pytest.mark.asyncio
+async def test_user_can_view_public_or_own_photo_only(db_session):
+    owner = User(telegram_id=1001, username="owner", full_name="Owner")
+    other = User(telegram_id=1002, username="other", full_name="Other")
+    public_photo = Photo(storage_bucket="bucket", storage_key="public.jpg")
+    private_photo = Photo(storage_bucket="bucket", storage_key="private.jpg")
+    db_session.add_all([owner, other, public_photo, private_photo])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChannelHistory(message_id=10, file_id="public-file", photo_id=public_photo.id),
+            Post(user_id=owner.id, file_id="private-file", photo_id=private_photo.id),
+        ]
+    )
+    await db_session.commit()
+
+    assert await crud.user_can_view_photo(db_session, photo_id=public_photo.id, telegram_id=other.telegram_id)
+    assert await crud.user_can_view_photo(db_session, photo_id=private_photo.id, telegram_id=owner.telegram_id)
+    assert not await crud.user_can_view_photo(db_session, photo_id=private_photo.id, telegram_id=other.telegram_id)
+    assert await crud.user_can_view_photo(
+        db_session,
+        photo_id=private_photo.id,
+        telegram_id=other.telegram_id,
+        is_admin=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_random_public_photo_ignores_private_submissions(db_session):
+    user = User(telegram_id=1001, username="owner", full_name="Owner")
+    public_photo = Photo(storage_bucket="bucket", storage_key="public.jpg")
+    private_photo = Photo(storage_bucket="bucket", storage_key="private.jpg")
+    db_session.add_all([user, public_photo, private_photo])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChannelHistory(message_id=10, file_id="public-file", photo_id=public_photo.id),
+            Post(user_id=user.id, file_id="private-file", photo_id=private_photo.id),
+        ]
+    )
+    await db_session.commit()
+
+    photo = await crud.get_random_public_photo(db_session)
+
+    assert photo is not None
+    assert photo.id == public_photo.id

@@ -31,10 +31,10 @@ def test_album_submission_photo_caption_contains_number_status_and_schedule():
 
     caption = album_submission_photo_caption(post, number=2)
 
-    assert "2. Заявка #7" in caption
+    assert "2. Заявка /post_7" in caption
     assert "Вид: птица" in caption
     assert "2026-07-06 12:00" in caption
-    assert "похоже на #99" in caption
+    assert "похоже на /photo_99" in caption
 
 
 def test_album_submission_photo_caption_renders_schedule_in_app_timezone():
