@@ -97,14 +97,26 @@ async def get_animal_type_name(session: AsyncSession, animal_type_id: int) -> st
     return await session.scalar(stmt)
 
 
+async def _find_animal_type_by_normalized_name(session: AsyncSession, normalized: str) -> AnimalType | None:
+    stmt = select(AnimalType).where(func.lower(AnimalType.name) == normalized.casefold())
+    existing = (await session.execute(stmt)).scalar_one_or_none()
+    if existing:
+        return existing
+
+    result = await session.execute(select(AnimalType))
+    for animal_type in result.scalars():
+        if animal_type.name.casefold() == normalized.casefold():
+            return animal_type
+    return None
+
+
 async def canonical_animal_type(session: AsyncSession, value: str | None) -> str:
     normalized = normalize_animal_type(value)
     if not normalized:
         return ""
 
-    stmt = select(AnimalType.name).where(func.lower(AnimalType.name) == normalized.casefold())
-    existing = await session.scalar(stmt)
-    return existing or normalized
+    existing = await _find_animal_type_by_normalized_name(session, normalized)
+    return existing.name if existing else normalized
 
 
 async def ensure_animal_type(session: AsyncSession, value: str | None, is_primary: bool = False) -> AnimalType | None:
@@ -112,8 +124,7 @@ async def ensure_animal_type(session: AsyncSession, value: str | None, is_primar
     if not normalized:
         return None
 
-    stmt = select(AnimalType).where(func.lower(AnimalType.name) == normalized.casefold())
-    existing = (await session.execute(stmt)).scalar_one_or_none()
+    existing = await _find_animal_type_by_normalized_name(session, normalized)
     if existing:
         return existing
 
@@ -407,6 +418,8 @@ async def get_slot_counts(session: AsyncSession, start_date: date | None = None,
     for raw_day, count in result.all():
         if isinstance(raw_day, datetime):
             day = ensure_app_timezone(raw_day).date()
+        elif isinstance(raw_day, str):
+            day = date.fromisoformat(raw_day)
         else:
             day = raw_day
         counts[day] = count

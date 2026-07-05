@@ -17,6 +17,50 @@ from db.models.post import Post, PostStatus
 logger = logging.getLogger(__name__)
 
 
+async def post_photo_input(post: Post):
+    if post.photo:
+        photo_bytes = await download_photo(
+            storage_bucket=post.photo.storage_bucket,
+            storage_key=post.photo.storage_key,
+        )
+        filename = f"{post.photo.sha256 or post.id}.jpg"
+        return BufferedInputFile(photo_bytes, filename=filename)
+
+    return post.file_id
+
+
+async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> None:
+    try:
+        photo = await post_photo_input(post)
+        message = await bot.send_photo(
+            chat_id=config.CHANNEL_ID,
+            photo=photo,
+            caption=bot_content.message("channel_post_caption", animal_type=post.animal_type),
+        )
+    except Exception:
+        logger.exception("Failed to publish post %s", post.id)
+        await session.rollback()
+        raise
+
+    post.status = PostStatus.PUBLISHED
+    post.message_id = message.message_id
+    if published_at is not None:
+        post.schedule_time = published_at
+    await session.commit()
+
+    if post.user:
+        try:
+            await bot.send_message(
+                chat_id=post.user.telegram_id,
+                text=bot_content.message(
+                    "published_user_notification",
+                    animal_type=post.animal_type,
+                ),
+            )
+        except TelegramAPIError:
+            logger.exception("Failed to notify user for post %s", post.id)
+
+
 async def publish_due_posts(bot: Bot) -> int:
     now = now_in_app_tz()
     published_count = 0
@@ -39,41 +83,11 @@ async def publish_due_posts(bot: Bot) -> int:
                 break
 
             try:
-                photo = post.file_id
-                if post.photo:
-                    photo_bytes = await download_photo(
-                        storage_bucket=post.photo.storage_bucket,
-                        storage_key=post.photo.storage_key,
-                    )
-                    filename = f"{post.photo.sha256 or post.id}.jpg"
-                    photo = BufferedInputFile(photo_bytes, filename=filename)
-
-                message = await bot.send_photo(
-                    chat_id=config.CHANNEL_ID,
-                    photo=photo,
-                    caption=bot_content.message("channel_post_caption", animal_type=post.animal_type),
-                )
-            except TelegramAPIError:
-                logger.exception("Failed to publish post %s", post.id)
-                await session.rollback()
+                await publish_post(bot, session, post)
+            except Exception:
                 break
 
-            post.status = PostStatus.PUBLISHED
-            post.message_id = message.message_id
-            await session.commit()
             published_count += 1
-
-            if post.user:
-                try:
-                    await bot.send_message(
-                        chat_id=post.user.telegram_id,
-                        text=bot_content.message(
-                            "published_user_notification",
-                            animal_type=post.animal_type,
-                        ),
-                    )
-                except TelegramAPIError:
-                    logger.exception("Failed to notify user for post %s", post.id)
 
     return published_count
 

@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.config import config
 from bot.content import bot_content
 from bot.services.identification import ITEM_REJECTED
-from db.crud import AnimalTypeOption, get_animal_type_options
+from db.crud import AnimalTypeOption, ensure_app_timezone, get_animal_type_options
 from db.database import async_session
 from db.models.post import PostStatus
 
@@ -55,6 +55,7 @@ def get_schedule_choice_kb() -> InlineKeyboardMarkup:
     builder.button(
         text=bot_content.button(
             "schedule_auto",
+            points=config.SCORE_APPROVED_POST_BASE,
             bonus_min=config.SCORE_AUTO_BONUS_MIN_PERCENT,
             bonus_max=config.SCORE_AUTO_BONUS_MAX_PERCENT,
         ),
@@ -73,6 +74,76 @@ def get_admin_approval_kb(post_id: int) -> InlineKeyboardMarkup:
     builder.button(text=bot_content.button("reject"), callback_data=f"admin_reject_{post_id}")
     builder.button(text=bot_content.button("change_animal"), callback_data=f"admin_change_{post_id}")
     builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def get_admin_menu_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=bot_content.button("admin_schedule"), callback_data="admin_schedule_today")
+    builder.button(text=bot_content.button("admin_stats"), callback_data="admin_stats")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_admin_schedule_kb(target_date: date, posts) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for post in posts:
+        schedule = ensure_app_timezone(post.schedule_time).strftime("%H:%M") if post.schedule_time else "--:--"
+        animal_type = post.animal_type or "?"
+        builder.button(
+            text=bot_content.button(
+                "admin_schedule_post",
+                post_id=post.id,
+                time=schedule,
+                animal_type=animal_type,
+            ),
+            callback_data=f"admin_post_{post.id}_{target_date.isoformat()}",
+        )
+
+    previous_day = target_date - timedelta(days=1)
+    next_day = target_date + timedelta(days=1)
+    builder.button(
+        text=bot_content.button("admin_schedule_prev_day"),
+        callback_data=f"admin_schedule_{previous_day.isoformat()}",
+    )
+    builder.button(
+        text=bot_content.button("admin_schedule_today"),
+        callback_data="admin_schedule_today",
+    )
+    builder.button(
+        text=bot_content.button("admin_schedule_next_day"),
+        callback_data=f"admin_schedule_{next_day.isoformat()}",
+    )
+    builder.button(text=bot_content.button("admin_stats"), callback_data="admin_stats")
+    builder.adjust(*([1] * len(posts)), 3, 1)
+    return builder.as_markup()
+
+
+def get_admin_post_manage_kb(post_id: int, return_date: date) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=bot_content.button("admin_publish_now"),
+        callback_data=f"admin_publish_{post_id}_{return_date.isoformat()}",
+    )
+    builder.button(
+        text=bot_content.button("admin_change_time"),
+        callback_data=f"admin_reschedule_{post_id}_{return_date.isoformat()}",
+    )
+    builder.button(
+        text=bot_content.button("admin_back_to_schedule"),
+        callback_data=f"admin_schedule_{return_date.isoformat()}",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_admin_reschedule_cancel_kb(return_date: date) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=bot_content.button("admin_back_to_schedule"),
+        callback_data=f"admin_cancel_reschedule_{return_date.isoformat()}",
+    )
+    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -118,15 +189,22 @@ async def get_admin_animal_change_kb(post_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_time_slots_kb(target_date: date, free_times: list[time]) -> InlineKeyboardMarkup:
+def get_time_slots_kb(
+    target_date: date,
+    free_times: list[time],
+    footer_buttons: list[tuple[str, str]] | None = None,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for slot_time in free_times:
         builder.button(
             text=slot_time.strftime("%H:%M"),
             callback_data=f"time_{target_date.isoformat()}_{slot_time.strftime('%H:%M')}",
         )
+    footer_buttons = footer_buttons or []
+    for text, callback_data in footer_buttons:
+        builder.button(text=text, callback_data=callback_data)
     builder.button(text=bot_content.button("back_to_calendar"), callback_data="schedule_manual")
-    builder.adjust(3, 1)
+    builder.adjust(*([3] * ((len(free_times) + 2) // 3)), *([1] * len(footer_buttons)), 1)
     return builder.as_markup()
 
 

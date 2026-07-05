@@ -13,7 +13,6 @@ base_router = Router()
 
 async def remove_legacy_reply_keyboard(message: Message) -> None:
     await message.answer(
-        bot_content.message("reply_keyboard_removed"),
         reply_markup=ReplyKeyboardRemove(),
     )
 
@@ -28,7 +27,7 @@ async def start_handler(message: Message):
         )
     
     await remove_legacy_reply_keyboard(message)
-    await message.answer(bot_content.message("start"), reply_markup=get_main_menu_kb())
+    await message.answer(bot_content.message("start"), reply_markup=get_main_menu_kb(), parse_mode="HTML")
 
 @base_router.message(Command("help"))
 async def help_handler(message: Message):

@@ -126,6 +126,162 @@ def _album_schedule_summary(posts) -> str:
     )
 
 
+def _parse_album_schedule_time(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value:
+        return datetime.fromisoformat(value)
+    return None
+
+
+def _serialize_album_schedule_times(schedule_times: list[datetime | None]) -> list[str | None]:
+    return [schedule_time.isoformat() if schedule_time else None for schedule_time in schedule_times]
+
+
+def _album_schedule_context(data: dict) -> tuple[list[dict], list[datetime | None], list[bool], int]:
+    items = _album_items(data)
+    count = len(items)
+
+    raw_times = list(data.get("album_schedule_times") or [])
+    schedule_times = [_parse_album_schedule_time(value) for value in raw_times[:count]]
+    schedule_times.extend([None] * (count - len(schedule_times)))
+
+    raw_flags = list(data.get("album_schedule_auto_flags") or [])
+    schedule_auto_flags = [bool(value) for value in raw_flags[:count]]
+    schedule_auto_flags.extend([False] * (count - len(schedule_auto_flags)))
+
+    try:
+        schedule_index = int(data.get("album_schedule_index") or 0)
+    except (TypeError, ValueError):
+        schedule_index = 0
+
+    if count:
+        schedule_index = max(0, min(schedule_index, count - 1))
+    else:
+        schedule_index = 0
+
+    return items, schedule_times, schedule_auto_flags, schedule_index
+
+
+def _album_schedule_state(
+    schedule_times: list[datetime | None],
+    schedule_auto_flags: list[bool],
+    schedule_index: int,
+) -> dict:
+    return {
+        "album_schedule_times": _serialize_album_schedule_times(schedule_times),
+        "album_schedule_auto_flags": schedule_auto_flags,
+        "album_schedule_index": schedule_index,
+    }
+
+
+def _next_unscheduled_index(schedule_times: list[datetime | None], start_at: int = 0) -> int | None:
+    for index in range(start_at, len(schedule_times)):
+        if schedule_times[index] is None:
+            return index
+
+    for index in range(0, min(start_at, len(schedule_times))):
+        if schedule_times[index] is None:
+            return index
+
+    return None
+
+
+def _album_selected_slots(data: dict, *, exclude_index: int | None = None) -> set[datetime]:
+    _, schedule_times, _, _ = _album_schedule_context(data)
+    return {
+        schedule_time
+        for index, schedule_time in enumerate(schedule_times)
+        if schedule_time is not None and index != exclude_index
+    }
+
+
+def _album_schedule_footer_buttons() -> list[tuple[str, str]]:
+    return [
+        (bot_content.button("album_schedule_auto_current"), "album_auto_current"),
+        (bot_content.button("album_schedule_auto_remaining"), "album_auto_remaining"),
+    ]
+
+
+def _album_schedule_prompt_kwargs(data: dict) -> dict:
+    items, _, _, schedule_index = _album_schedule_context(data)
+    item = items[schedule_index] if items else {}
+    return {
+        "current": schedule_index + 1 if items else 0,
+        "total": len(items),
+        "animal_type": item.get("animal_type") or "?",
+    }
+
+
+def _subtract_selected_album_slots(availability: dict, selected_slots: set[datetime]) -> dict:
+    adjusted = dict(availability)
+    for schedule_time in selected_slots:
+        target_date = schedule_time.date()
+        if target_date in adjusted:
+            adjusted[target_date] = max(adjusted[target_date] - 1, 0)
+    return adjusted
+
+
+def _filter_selected_album_times(
+    free_times: list[time],
+    target_date,
+    selected_slots: set[datetime],
+) -> list[time]:
+    selected_times = {
+        schedule_time.timetz().replace(tzinfo=None)
+        for schedule_time in selected_slots
+        if schedule_time.date() == target_date
+    }
+    return [slot_time for slot_time in free_times if slot_time not in selected_times]
+
+
+async def _build_calendar_markup(data: dict, *, year: int, month: int):
+    from bot.keyboards.calendar import build_month_calendar
+
+    today = now_in_app_tz().date()
+    min_date = today + timedelta(days=1)
+    max_date = min_date + timedelta(days=config.AUTO_POST_DAYS_AHEAD - 1)
+
+    async with async_session() as session:
+        availability = await get_day_availability(session, start_date=min_date, days=config.AUTO_POST_DAYS_AHEAD)
+
+    footer_buttons = None
+    if _is_album_submission(data):
+        _, _, _, schedule_index = _album_schedule_context(data)
+        selected_slots = _album_selected_slots(data, exclude_index=schedule_index)
+        availability = _subtract_selected_album_slots(availability, selected_slots)
+        footer_buttons = _album_schedule_footer_buttons()
+
+    return build_month_calendar(
+        year=year,
+        month=month,
+        availability=availability,
+        min_date=min_date,
+        max_date=max_date,
+        max_slots=len(parse_daily_slot_times()),
+        footer_buttons=footer_buttons,
+    )
+
+
+async def _show_album_schedule_calendar(
+    message: Message,
+    data: dict,
+    *,
+    year: int | None = None,
+    month: int | None = None,
+    message_key: str = "choose_publication_date_album",
+) -> None:
+    today = now_in_app_tz().date()
+    min_date = today + timedelta(days=1)
+    year = year or min_date.year
+    month = month or min_date.month
+
+    await message.edit_text(
+        bot_content.message(message_key, **_album_schedule_prompt_kwargs(data)),
+        reply_markup=await _build_calendar_markup(data, year=year, month=month),
+    )
+
+
 class SuggestState(StatesGroup):
     waiting_for_animal_type = State()
     waiting_for_custom_animal_type = State()
@@ -345,10 +501,15 @@ async def _create_album_posts(
     *,
     data: dict,
     schedule_times: list[datetime],
-    is_auto_scheduled: bool,
+    is_auto_scheduled: bool | None = None,
+    schedule_auto_flags: list[bool] | None = None,
 ) -> list:
     items = _album_items(data)
     group_id = data.get("submission_group_id") or f"album-{uuid4().hex}"
+    if schedule_auto_flags is None:
+        schedule_auto_flags = [bool(is_auto_scheduled)] * len(items)
+    if len(schedule_times) != len(items) or len(schedule_auto_flags) != len(items):
+        raise RuntimeError("Album schedule state is invalid")
     posts = []
 
     for index, (item, schedule_time) in enumerate(zip(items, schedule_times), start=1):
@@ -357,7 +518,7 @@ async def _create_album_posts(
             user_id=data["user_id"],
             file_id=item["file_id"],
             animal_type=item.get("animal_type"),
-            is_auto_scheduled=is_auto_scheduled,
+            is_auto_scheduled=schedule_auto_flags[index - 1],
             manual_time=schedule_time,
             photo_id=item.get("photo_id"),
             duplicate_of_photo_id=item.get("duplicate_of_photo_id"),
@@ -421,6 +582,107 @@ async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str)
         chat_id=config.ADMIN_ID,
         text=admin_album_control_text(ordered_posts, author=author),
         reply_markup=get_admin_album_kb(ordered_posts),
+    )
+
+
+async def _first_album_schedule_conflict(session, schedule_times: list[datetime]) -> int | None:
+    selected_slot_keys = set()
+    for index, schedule_time in enumerate(schedule_times):
+        slot_key = (schedule_time.date(), schedule_time.timetz().replace(tzinfo=None))
+        if slot_key in selected_slot_keys:
+            return index
+        selected_slot_keys.add(slot_key)
+
+    for index, schedule_time in enumerate(schedule_times):
+        free_times = await get_free_slot_times(session, schedule_time.date())
+        if schedule_time.timetz().replace(tzinfo=None) not in free_times:
+            return index
+
+    return None
+
+
+async def _finalize_album_submission(
+    callback: CallbackQuery,
+    state: FSMContext,
+    bot: Bot,
+    *,
+    data: dict,
+    schedule_times: list[datetime | None],
+    schedule_auto_flags: list[bool],
+) -> None:
+    complete_schedule_times = [schedule_time for schedule_time in schedule_times if schedule_time is not None]
+    if len(complete_schedule_times) != len(_album_items(data)):
+        missing_index = _next_unscheduled_index(schedule_times) or 0
+        await state.update_data(**_album_schedule_state(schedule_times, schedule_auto_flags, missing_index))
+        updated_data = {
+            **data,
+            **_album_schedule_state(schedule_times, schedule_auto_flags, missing_index),
+        }
+        await _show_album_schedule_calendar(callback.message, updated_data)
+        return
+
+    async with async_session() as session:
+        conflict_index = await _first_album_schedule_conflict(session, complete_schedule_times)
+        if conflict_index is not None:
+            schedule_times[conflict_index] = None
+            schedule_auto_flags[conflict_index] = False
+            state_data = _album_schedule_state(schedule_times, schedule_auto_flags, conflict_index)
+            await state.update_data(**state_data)
+            await _show_album_schedule_calendar(
+                callback.message,
+                {**data, **state_data},
+                message_key="album_slot_taken",
+            )
+            return
+
+        posts = await _create_album_posts(
+            session,
+            data=data,
+            schedule_times=complete_schedule_times,
+            schedule_auto_flags=schedule_auto_flags,
+        )
+
+    await state.clear()
+    await callback.message.edit_text(
+        bot_content.message(
+            "album_submitted_manual",
+            schedules=_album_schedule_summary(posts),
+        )
+    )
+    await _send_album_submission_to_admin(bot, posts=posts, author=user_display(callback.from_user))
+
+
+async def _save_album_schedule_and_continue(
+    callback: CallbackQuery,
+    state: FSMContext,
+    bot: Bot,
+    *,
+    schedule_time: datetime,
+    is_auto_scheduled: bool,
+) -> None:
+    data = await state.get_data()
+    items, schedule_times, schedule_auto_flags, schedule_index = _album_schedule_context(data)
+    if not items:
+        await callback.answer()
+        return
+
+    schedule_times[schedule_index] = schedule_time
+    schedule_auto_flags[schedule_index] = is_auto_scheduled
+    next_index = _next_unscheduled_index(schedule_times, schedule_index + 1)
+
+    if next_index is not None:
+        state_data = _album_schedule_state(schedule_times, schedule_auto_flags, next_index)
+        await state.update_data(**state_data)
+        await _show_album_schedule_calendar(callback.message, {**data, **state_data})
+        return
+
+    await _finalize_album_submission(
+        callback,
+        state,
+        bot,
+        data=data,
+        schedule_times=schedule_times,
+        schedule_auto_flags=schedule_auto_flags,
     )
 
 
@@ -712,35 +974,34 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
 
 @suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data == "schedule_manual")
 async def handle_schedule_manual(callback: CallbackQuery, state: FSMContext):
-    from bot.keyboards.calendar import build_month_calendar
-
     today = now_in_app_tz().date()
     min_date = today + timedelta(days=1)
-    max_date = min_date + timedelta(days=config.AUTO_POST_DAYS_AHEAD - 1)
-
-    async with async_session() as session:
-        availability = await get_day_availability(session, start_date=min_date, days=config.AUTO_POST_DAYS_AHEAD)
-
     data = await state.get_data()
-    message_key = "choose_publication_date_album" if _is_album_submission(data) else "choose_publication_date"
+
+    if _is_album_submission(data):
+        items, schedule_times, schedule_auto_flags, schedule_index = _album_schedule_context(data)
+        if not items:
+            await callback.answer()
+            return
+
+        if schedule_times[schedule_index] is not None:
+            schedule_index = _next_unscheduled_index(schedule_times, schedule_index) or schedule_index
+
+        state_data = _album_schedule_state(schedule_times, schedule_auto_flags, schedule_index)
+        await state.update_data(**state_data)
+        await _show_album_schedule_calendar(callback.message, {**data, **state_data})
+        await callback.answer()
+        return
+
     await callback.message.edit_text(
-        bot_content.message(message_key),
-        reply_markup=build_month_calendar(
-            year=min_date.year,
-            month=min_date.month,
-            availability=availability,
-            min_date=min_date,
-            max_date=max_date,
-            max_slots=len(parse_daily_slot_times()),
-        ),
+        bot_content.message("choose_publication_date"),
+        reply_markup=await _build_calendar_markup(data, year=min_date.year, month=min_date.month),
     )
     await callback.answer()
 
 
 @suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data.startswith("cal_nav_"))
-async def handle_calendar_nav(callback: CallbackQuery):
-    from bot.keyboards.calendar import build_month_calendar
-
+async def handle_calendar_nav(callback: CallbackQuery, state: FSMContext):
     _, _, year_raw, month_raw = callback.data.split("_")
     year = int(year_raw)
     month = int(month_raw)
@@ -752,18 +1013,9 @@ async def handle_calendar_nav(callback: CallbackQuery):
         await callback.answer()
         return
 
-    async with async_session() as session:
-        availability = await get_day_availability(session, start_date=min_date, days=config.AUTO_POST_DAYS_AHEAD)
-
+    data = await state.get_data()
     await callback.message.edit_reply_markup(
-        reply_markup=build_month_calendar(
-            year=year,
-            month=month,
-            availability=availability,
-            min_date=min_date,
-            max_date=max_date,
-            max_slots=len(parse_daily_slot_times()),
-        )
+        reply_markup=await _build_calendar_markup(data, year=year, month=month)
     )
     await callback.answer()
 
@@ -781,10 +1033,27 @@ async def handle_calendar_day(callback: CallbackQuery, state: FSMContext):
         return
 
     data = await state.get_data()
-    message_key = "choose_publication_time_album" if _is_album_submission(data) else "choose_publication_time"
+    footer_buttons = None
+    message_kwargs = {"date": target_date.strftime("%Y-%m-%d")}
+    if _is_album_submission(data):
+        _, _, _, schedule_index = _album_schedule_context(data)
+        free_times = _filter_selected_album_times(
+            free_times,
+            target_date,
+            _album_selected_slots(data, exclude_index=schedule_index),
+        )
+        if not free_times:
+            await callback.answer(bot_content.message("no_free_slots"), show_alert=True)
+            return
+        footer_buttons = _album_schedule_footer_buttons()
+        message_key = "choose_publication_time_album"
+        message_kwargs.update(_album_schedule_prompt_kwargs(data))
+    else:
+        message_key = "choose_publication_time"
+
     await callback.message.edit_text(
-        bot_content.message(message_key, date=target_date.strftime("%Y-%m-%d")),
-        reply_markup=get_time_slots_kb(target_date, free_times),
+        bot_content.message(message_key, **message_kwargs),
+        reply_markup=get_time_slots_kb(target_date, free_times, footer_buttons=footer_buttons),
     )
     await callback.answer()
 
@@ -801,23 +1070,28 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
 
     async with async_session() as session:
         free_times = await get_free_slot_times(session, target_date)
+        if _is_album_submission(data):
+            _, _, _, schedule_index = _album_schedule_context(data)
+            free_times = _filter_selected_album_times(
+                free_times,
+                target_date,
+                _album_selected_slots(data, exclude_index=schedule_index),
+            )
+
         if schedule_time.timetz().replace(tzinfo=None) not in free_times:
             await callback.answer(bot_content.message("slot_taken"), show_alert=True)
             return
 
         if _is_album_submission(data):
-            items = _album_items(data)
-            schedule_times = await _allocate_album_schedule_slots(
-                session,
-                len(items),
-                first_slot=schedule_time,
-            )
-            posts = await _create_album_posts(
-                session,
-                data=data,
-                schedule_times=schedule_times,
+            await _save_album_schedule_and_continue(
+                callback,
+                state,
+                bot,
+                schedule_time=schedule_time,
                 is_auto_scheduled=False,
             )
+            await callback.answer()
+            return
         else:
             file_id = data.get("file_id")
             photo_id = data.get("photo_id")
@@ -840,18 +1114,6 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
 
     await state.clear()
 
-    if _is_album_submission(data):
-        await callback.message.edit_text(
-            bot_content.message(
-                "album_submitted_manual",
-                schedule=_format_schedule(schedule_time),
-                schedules=_album_schedule_summary(posts),
-            )
-        )
-        await _send_album_submission_to_admin(bot, posts=posts, author=author)
-        await callback.answer()
-        return
-
     await callback.message.edit_text(
         bot_content.message(
             "photo_submitted_manual",
@@ -866,6 +1128,75 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
         animal_type=data.get("animal_type"),
         schedule_time=schedule_time,
         author=author,
+    )
+    await callback.answer()
+
+
+@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data == "album_auto_current")
+async def handle_album_auto_current(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    if not _is_album_submission(data):
+        await callback.answer()
+        return
+
+    _, _, _, schedule_index = _album_schedule_context(data)
+    selected_slots = _album_selected_slots(data, exclude_index=schedule_index)
+    tomorrow = now_in_app_tz().date() + timedelta(days=1)
+    async with async_session() as session:
+        schedule_time = await _find_next_free_slot(
+            session,
+            combine_slot(tomorrow, time.min),
+            selected_slots,
+        )
+
+    await _save_album_schedule_and_continue(
+        callback,
+        state,
+        bot,
+        schedule_time=schedule_time,
+        is_auto_scheduled=True,
+    )
+    await callback.answer()
+
+
+@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data == "album_auto_remaining")
+async def handle_album_auto_remaining(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    if not _is_album_submission(data):
+        await callback.answer()
+        return
+
+    items, schedule_times, schedule_auto_flags, schedule_index = _album_schedule_context(data)
+    if not items:
+        await callback.answer()
+        return
+
+    remaining_indices = list(range(schedule_index, len(items)))
+    selected_slots = {
+        schedule_time
+        for index, schedule_time in enumerate(schedule_times)
+        if schedule_time is not None and index not in remaining_indices
+    }
+    tomorrow = now_in_app_tz().date() + timedelta(days=1)
+    start_at = combine_slot(tomorrow, time.min)
+
+    async with async_session() as session:
+        for index in remaining_indices:
+            schedule_time = await _find_next_free_slot(session, start_at, selected_slots)
+            schedule_times[index] = schedule_time
+            schedule_auto_flags[index] = True
+            selected_slots.add(schedule_time)
+            start_at = schedule_time + timedelta(minutes=1)
+
+    state_data = _album_schedule_state(schedule_times, schedule_auto_flags, schedule_index)
+    await state.update_data(**state_data)
+    await _finalize_album_submission(
+        callback,
+        state,
+        bot,
+        data={**data, **state_data},
+        schedule_times=schedule_times,
+        schedule_auto_flags=schedule_auto_flags,
     )
     await callback.answer()
 

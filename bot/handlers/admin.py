@@ -1,19 +1,37 @@
+from datetime import date, datetime, time
+
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import CallbackQuery
-from sqlalchemy import select
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, Message
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from bot.config import config
 from bot.content import bot_content
-from bot.keyboards.inline import get_admin_album_kb, get_admin_animal_change_kb, get_admin_approval_kb
+from bot.keyboards.inline import (
+    get_admin_album_kb,
+    get_admin_animal_change_kb,
+    get_admin_approval_kb,
+    get_admin_menu_kb,
+    get_admin_post_manage_kb,
+    get_admin_reschedule_cancel_kb,
+    get_admin_schedule_kb,
+)
 from bot.services.captions import admin_album_control_text, submission_caption
+from bot.services.publisher import publish_post
 from bot.services.scoring import award_post_approval_score
-from db.crud import ensure_animal_type, get_animal_type_name, get_next_auto_slot
+from db.crud import app_timezone, combine_slot, ensure_animal_type, get_animal_type_name, get_next_auto_slot, now_in_app_tz
 from db.database import async_session
 from db.models.post import Post, PostStatus
 
 admin_router = Router()
+
+
+class AdminState(StatesGroup):
+    waiting_for_reschedule_time = State()
 
 
 def is_admin(callback: CallbackQuery) -> bool:
@@ -43,9 +61,146 @@ def admin_post_caption(post: Post) -> str:
     )
 
 
+def parse_schedule_date(raw_value: str | None) -> date:
+    if raw_value == "today" or not raw_value:
+        return now_in_app_tz().date()
+    return date.fromisoformat(raw_value)
+
+
+def parse_admin_datetime(raw_value: str) -> datetime | None:
+    value = " ".join(raw_value.split())
+    for date_time_format in ("%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M"):
+        try:
+            parsed = datetime.strptime(value, date_time_format)
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=app_timezone())
+    return None
+
+
+def format_schedule(value: datetime | None) -> str:
+    if not value:
+        return bot_content.message("schedule_not_selected")
+    return value.astimezone(app_timezone()).strftime("%Y-%m-%d %H:%M")
+
+
+def admin_schedule_text(target_date: date, posts: list[Post]) -> str:
+    if not posts:
+        return bot_content.message("admin_schedule_empty", date=target_date.isoformat())
+
+    lines = []
+    for post in posts:
+        lines.append(
+            bot_content.message(
+                "admin_schedule_line",
+                post_id=post.id,
+                time=format_schedule(post.schedule_time)[11:16],
+                animal_type=post.animal_type,
+                author=post_author(post),
+            )
+        )
+    return bot_content.message(
+        "admin_schedule_header",
+        date=target_date.isoformat(),
+        count=len(posts),
+        posts="\n".join(lines),
+    )
+
+
+def admin_post_manage_text(post: Post) -> str:
+    return bot_content.message(
+        "admin_post_manage",
+        post_id=post.id,
+        animal_type=post.animal_type,
+        status=bot_content.status_label(post.status),
+        schedule=format_schedule(post.schedule_time),
+        author=post_author(post),
+    )
+
+
 async def load_post(session, post_id: int) -> Post | None:
-    stmt = select(Post).options(selectinload(Post.user)).where(Post.id == post_id)
+    stmt = select(Post).options(selectinload(Post.user), selectinload(Post.photo)).where(Post.id == post_id)
     return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def lock_post(session, post_id: int) -> Post | None:
+    stmt = (
+        select(Post)
+        .options(selectinload(Post.user), selectinload(Post.photo))
+        .where(Post.id == post_id)
+        .with_for_update()
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def load_admin_schedule_posts(session, target_date: date) -> list[Post]:
+    day_start = combine_slot(target_date, time.min)
+    day_end = combine_slot(target_date, time.max)
+    stmt = (
+        select(Post)
+        .options(selectinload(Post.user))
+        .where(
+            Post.status == PostStatus.APPROVED,
+            Post.schedule_time >= day_start,
+            Post.schedule_time <= day_end,
+        )
+        .order_by(Post.schedule_time.asc(), Post.id.asc())
+    )
+    return list((await session.execute(stmt)).scalars())
+
+
+async def load_admin_stats(session) -> str:
+    status_rows = await session.execute(select(Post.status, func.count(Post.id)).group_by(Post.status))
+    status_counts = dict(status_rows.all())
+    now = now_in_app_tz()
+    today = now.date()
+    today_start = combine_slot(today, time.min)
+    today_end = combine_slot(today, time.max)
+
+    today_scheduled = await session.scalar(
+        select(func.count(Post.id)).where(
+            Post.status == PostStatus.APPROVED,
+            Post.schedule_time >= today_start,
+            Post.schedule_time <= today_end,
+        )
+    )
+    overdue = await session.scalar(
+        select(func.count(Post.id)).where(
+            Post.status == PostStatus.APPROVED,
+            Post.schedule_time < now,
+        )
+    )
+    next_post = (
+        await session.execute(
+            select(Post)
+            .where(Post.status == PostStatus.APPROVED)
+            .order_by(Post.schedule_time.asc(), Post.id.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    animal_rows = await session.execute(
+        select(Post.animal_type, func.count(Post.id))
+        .where(Post.status.in_([PostStatus.APPROVED, PostStatus.PUBLISHED]))
+        .group_by(Post.animal_type)
+        .order_by(func.count(Post.id).desc(), Post.animal_type.asc())
+        .limit(5)
+    )
+    animal_stats = "\n".join(
+        bot_content.message("admin_stats_animal_line", animal_type=animal_type or "?", count=count)
+        for animal_type, count in animal_rows.all()
+    ) or bot_content.message("admin_stats_no_animals")
+
+    return bot_content.message(
+        "admin_stats_text",
+        pending=status_counts.get(PostStatus.PENDING, 0),
+        approved=status_counts.get(PostStatus.APPROVED, 0),
+        rejected=status_counts.get(PostStatus.REJECTED, 0),
+        published=status_counts.get(PostStatus.PUBLISHED, 0),
+        today_scheduled=today_scheduled or 0,
+        overdue=overdue or 0,
+        next_schedule=format_schedule(next_post.schedule_time) if next_post else bot_content.message("schedule_not_selected"),
+        animal_stats=animal_stats,
+    )
 
 
 async def load_submission_group_posts(session, post: Post) -> list[Post]:
@@ -71,6 +226,216 @@ async def refresh_admin_album_control(callback: CallbackQuery, session, post: Po
 
 def callback_is_album_control(callback: CallbackQuery, post: Post) -> bool:
     return bool(post.submission_group_id and callback.message and callback.message.text)
+
+
+async def send_admin_schedule(target, target_date: date, *, callback_text: str | None = None) -> None:
+    async with async_session() as session:
+        posts = await load_admin_schedule_posts(session, target_date)
+
+    text = admin_schedule_text(target_date, posts)
+    reply_markup = get_admin_schedule_kb(target_date, posts)
+    if isinstance(target, CallbackQuery):
+        await target.message.edit_text(text, reply_markup=reply_markup)
+        await target.answer(callback_text)
+        return
+    await target.answer(text, reply_markup=reply_markup)
+
+
+@admin_router.message(Command("admin"))
+async def admin_menu_handler(message: Message):
+    if message.from_user.id != config.ADMIN_ID:
+        await message.answer(bot_content.message("not_admin"))
+        return
+    await message.answer(bot_content.message("admin_menu"), reply_markup=get_admin_menu_kb())
+
+
+@admin_router.message(Command("schedule"))
+async def admin_schedule_command(message: Message):
+    if message.from_user.id != config.ADMIN_ID:
+        await message.answer(bot_content.message("not_admin"))
+        return
+    await send_admin_schedule(message, now_in_app_tz().date())
+
+
+@admin_router.message(Command("stats"))
+async def admin_stats_command(message: Message):
+    if message.from_user.id != config.ADMIN_ID:
+        await message.answer(bot_content.message("not_admin"))
+        return
+    async with async_session() as session:
+        text = await load_admin_stats(session)
+    await message.answer(text, reply_markup=get_admin_menu_kb())
+
+
+@admin_router.callback_query(F.data == "admin_stats")
+async def handle_admin_stats(callback: CallbackQuery):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    async with async_session() as session:
+        text = await load_admin_stats(session)
+    await callback.message.edit_text(text, reply_markup=get_admin_menu_kb())
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("admin_schedule_"))
+async def handle_admin_schedule(callback: CallbackQuery):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    try:
+        target_date = parse_schedule_date(callback.data.removeprefix("admin_schedule_"))
+    except ValueError:
+        await callback.answer(bot_content.message("admin_invalid_date"), show_alert=True)
+        return
+
+    await send_admin_schedule(callback, target_date)
+
+
+@admin_router.callback_query(F.data.startswith("admin_post_"))
+async def handle_admin_post_manage(callback: CallbackQuery):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    _, _, post_id_raw, return_date_raw = callback.data.split("_", 3)
+    try:
+        post_id = int(post_id_raw)
+        return_date = date.fromisoformat(return_date_raw)
+    except ValueError:
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+
+    if not post or post.status != PostStatus.APPROVED:
+        await callback.answer(bot_content.message("admin_post_not_scheduled"), show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        admin_post_manage_text(post),
+        reply_markup=get_admin_post_manage_kb(post.id, return_date),
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("admin_publish_"))
+async def handle_admin_publish_now(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    _, _, post_id_raw, return_date_raw = callback.data.split("_", 3)
+    try:
+        post_id = int(post_id_raw)
+        return_date = date.fromisoformat(return_date_raw)
+    except ValueError:
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
+    async with async_session() as session:
+        post = await lock_post(session, post_id)
+        if not post or post.status != PostStatus.APPROVED:
+            await callback.answer(bot_content.message("admin_post_not_scheduled"), show_alert=True)
+            return
+
+        try:
+            await publish_post(bot, session, post, published_at=now_in_app_tz())
+        except Exception:
+            await callback.answer(bot_content.message("admin_publish_failed"), show_alert=True)
+            return
+
+    await send_admin_schedule(callback, return_date, callback_text=bot_content.message("admin_published_now"))
+
+
+@admin_router.callback_query(F.data.startswith("admin_reschedule_"))
+async def handle_admin_reschedule_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    _, _, post_id_raw, return_date_raw = callback.data.split("_", 3)
+    try:
+        post_id = int(post_id_raw)
+        return_date = date.fromisoformat(return_date_raw)
+    except ValueError:
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+
+    if not post or post.status != PostStatus.APPROVED:
+        await callback.answer(bot_content.message("admin_post_not_scheduled"), show_alert=True)
+        return
+
+    await state.set_state(AdminState.waiting_for_reschedule_time)
+    await state.update_data(post_id=post_id, return_date=return_date.isoformat())
+    await callback.message.edit_text(
+        bot_content.message(
+            "admin_reschedule_prompt",
+            post_id=post_id,
+            current_schedule=format_schedule(post.schedule_time),
+        ),
+        reply_markup=get_admin_reschedule_cancel_kb(return_date),
+    )
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data.startswith("admin_cancel_reschedule_"))
+async def handle_admin_cancel_reschedule(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    try:
+        return_date = date.fromisoformat(callback.data.removeprefix("admin_cancel_reschedule_"))
+    except ValueError:
+        return_date = now_in_app_tz().date()
+    await state.clear()
+    await send_admin_schedule(callback, return_date)
+
+
+@admin_router.message(AdminState.waiting_for_reschedule_time)
+async def handle_admin_reschedule_text(message: Message, state: FSMContext):
+    if message.from_user.id != config.ADMIN_ID:
+        await message.answer(bot_content.message("not_admin"))
+        return
+
+    data = await state.get_data()
+    post_id = int(data.get("post_id") or 0)
+    return_date = parse_schedule_date(data.get("return_date"))
+    new_schedule = parse_admin_datetime(message.text or "")
+    if new_schedule is None:
+        await message.answer(
+            bot_content.message("admin_reschedule_invalid"),
+            reply_markup=get_admin_reschedule_cancel_kb(return_date),
+        )
+        return
+
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+        if not post or post.status != PostStatus.APPROVED:
+            await state.clear()
+            await message.answer(bot_content.message("admin_post_not_scheduled"))
+            return
+
+        post.schedule_time = new_schedule
+        post.is_auto_scheduled = False
+        await session.commit()
+
+    await state.clear()
+    await message.answer(
+        bot_content.message(
+            "admin_reschedule_saved",
+            post_id=post_id,
+            schedule=format_schedule(new_schedule),
+        ),
+    )
+    await send_admin_schedule(message, new_schedule.date())
 
 
 @admin_router.callback_query(F.data.startswith("admin_approve_"))

@@ -39,11 +39,13 @@ def build_month_calendar(
     min_date: date,
     max_date: date,
     max_slots: int,
+    footer_buttons: list[tuple[str, str]] | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     calendar.setfirstweekday(calendar.MONDAY)
 
     current_month = date(year, month, 1)
+    month_weeks = calendar.monthcalendar(year, month)
     prev_year, prev_month = _shift_month(year, month, -1)
     next_year, next_month = _shift_month(year, month, 1)
     prev_enabled = date(prev_year, prev_month, 1) >= _month_start(min_date)
@@ -62,7 +64,7 @@ def build_month_calendar(
     for weekday in bot_content.weekday_names():
         builder.button(text=weekday, callback_data="noop")
 
-    for week in calendar.monthcalendar(year, month):
+    for week in month_weeks:
         for day_number in week:
             if day_number == 0:
                 builder.button(text=" ", callback_data="noop")
@@ -75,5 +77,9 @@ def build_month_calendar(
             callback_data = f"cal_day_{day.isoformat()}" if enabled else "noop"
             builder.button(text=f"{marker} {day_number}", callback_data=callback_data)
 
-    builder.adjust(3, 7, 7, 7, 7, 7, 7)
+    footer_buttons = footer_buttons or []
+    for text, callback_data in footer_buttons:
+        builder.button(text=text, callback_data=callback_data)
+
+    builder.adjust(3, 7, *([7] * len(month_weeks)), *([1] * len(footer_buttons)))
     return builder.as_markup()
