@@ -96,3 +96,22 @@ def admin_album_control_text(posts, *, author: str) -> str:
         )
 
     return "\n".join(lines)
+
+
+def admin_album_view_caption(posts, current_post, *, author: str) -> str:
+    ordered_posts = sorted(posts, key=lambda post: post.submission_group_index or post.id)
+    current_index = next(
+        (index for index, post in enumerate(ordered_posts, start=1) if post.id == current_post.id),
+        current_post.submission_group_index or 1,
+    )
+    return bot_content.message(
+        "admin_album_view_caption",
+        author=author,
+        number=current_index,
+        count=len(ordered_posts),
+        post_id=current_post.id,
+        animal_type=current_post.animal_type,
+        status=bot_content.status_label(current_post.status),
+        schedule=format_schedule(current_post.schedule_time),
+        duplicate_note=duplicate_note(current_post.duplicate_of_photo_id, current_post.duplicate_distance),
+    )

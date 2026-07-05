@@ -26,7 +26,14 @@ def get_main_menu_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-async def get_animal_type_kb() -> InlineKeyboardMarkup:
+def _add_album_nav_buttons(builder: InlineKeyboardBuilder, *, with_album_nav: bool) -> None:
+    if not with_album_nav:
+        return
+    builder.button(text=bot_content.button("album_prev"), callback_data="album_prev")
+    builder.button(text=bot_content.button("album_next"), callback_data="album_next")
+
+
+async def get_animal_type_kb(*, with_album_nav: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     async with async_session() as session:
         animal_types = await get_animal_type_options(session, is_primary=True)
@@ -34,11 +41,12 @@ async def get_animal_type_kb() -> InlineKeyboardMarkup:
     for animal_type in animal_types:
         builder.button(text=animal_type.name, callback_data=f"animal_id_{animal_type.id}")
     builder.button(text=bot_content.other_animal_label(), callback_data="animal_other")
-    builder.adjust(*_two_column_rows(len(animal_types), footer_count=1))
+    _add_album_nav_buttons(builder, with_album_nav=with_album_nav)
+    builder.adjust(*_two_column_rows(len(animal_types), footer_count=1), *([2] if with_album_nav else []))
     return builder.as_markup()
 
 
-async def get_other_animal_type_kb() -> InlineKeyboardMarkup:
+async def get_other_animal_type_kb(*, with_album_nav: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     async with async_session() as session:
         animal_types = await get_animal_type_options(session, is_primary=False)
@@ -47,7 +55,8 @@ async def get_other_animal_type_kb() -> InlineKeyboardMarkup:
         builder.button(text=animal_type.name, callback_data=f"animal_extra_id_{animal_type.id}")
     builder.button(text=bot_content.button("custom_animal_type"), callback_data="animal_custom")
     builder.button(text=bot_content.button("back"), callback_data="animal_back")
-    builder.adjust(*_two_column_rows(len(animal_types), footer_count=2))
+    _add_album_nav_buttons(builder, with_album_nav=with_album_nav)
+    builder.adjust(*_two_column_rows(len(animal_types), footer_count=2), *([2] if with_album_nav else []))
     return builder.as_markup()
 
 def get_schedule_choice_kb() -> InlineKeyboardMarkup:
@@ -163,6 +172,36 @@ def get_admin_rejection_reason_kb(post_id: int, *, has_duplicate: bool = False) 
     return builder.as_markup()
 
 
+def get_admin_album_view_kb(posts, current_post) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    ordered_posts = sorted(posts, key=lambda item: item.submission_group_index or item.id)
+    if len(ordered_posts) > 1:
+        builder.button(text=bot_content.button("album_prev"), callback_data=f"admin_album_prev_{current_post.id}")
+        builder.button(text=bot_content.button("album_next"), callback_data=f"admin_album_next_{current_post.id}")
+
+    if current_post.status == PostStatus.PENDING:
+        number = current_post.submission_group_index or 1
+        builder.button(
+            text=bot_content.button("album_approve", number=number),
+            callback_data=f"admin_approve_{current_post.id}",
+        )
+        builder.button(
+            text=bot_content.button("album_reject", number=number),
+            callback_data=f"admin_reject_{current_post.id}",
+        )
+        builder.button(
+            text=bot_content.button("album_change", number=number),
+            callback_data=f"admin_change_{current_post.id}",
+        )
+
+    row_sizes = [2] if len(ordered_posts) > 1 else []
+    if current_post.status == PostStatus.PENDING:
+        row_sizes.append(3)
+    if row_sizes:
+        builder.adjust(*row_sizes)
+    return builder.as_markup()
+
+
 def get_admin_album_kb(posts) -> InlineKeyboardMarkup | None:
     pending_posts = [
         post
@@ -253,6 +292,40 @@ def get_identification_continue_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("identify_next"), callback_data="identify_next")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_identification_batch_view_kb(batch, current_item) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    items = sorted(batch.items, key=lambda item: item.item_number)
+    if len(items) > 1:
+        builder.button(
+            text=bot_content.button("album_prev"),
+            callback_data=f"ident_batch_prev_{batch.id}_{current_item.item_number}",
+        )
+        builder.button(
+            text=bot_content.button("album_next"),
+            callback_data=f"ident_batch_next_{batch.id}_{current_item.item_number}",
+        )
+
+    toggle_button = (
+        "identification_batch_include"
+        if current_item.status == ITEM_REJECTED
+        else "identification_batch_exclude"
+    )
+    builder.button(
+        text=bot_content.button(toggle_button),
+        callback_data=f"ident_item_{batch.id}_{current_item.item_number}",
+    )
+    builder.button(text=bot_content.button("identification_batch_done"), callback_data=f"ident_batch_done_{batch.id}")
+    builder.button(
+        text=bot_content.button("identification_batch_reject"),
+        callback_data=f"ident_batch_reject_{batch.id}",
+    )
+
+    row_sizes = [2] if len(items) > 1 else []
+    row_sizes.extend([1, 2])
+    builder.adjust(*row_sizes)
     return builder.as_markup()
 
 

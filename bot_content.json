@@ -52,6 +52,8 @@
     "album_approve": "✅ {number}",
     "album_reject": "❌ {number}",
     "album_change": "✏️ {number}",
+    "album_prev": "‹ Назад",
+    "album_next": "Вперед ›",
     "album_schedule_auto_current": "Авто для этого фото",
     "album_schedule_auto_remaining": "Авто для всех оставшихся",
     "custom_animal_type": "Свой вариант",
@@ -59,6 +61,8 @@
     "back_to_calendar": "Назад к календарю",
     "identify_old_photos": "Помочь опознать фото",
     "identify_next": "Следующее фото",
+    "identification_batch_exclude": "Исключить это фото",
+    "identification_batch_include": "Вернуть это фото",
     "identification_batch_done": "Подтвердить пачку",
     "identification_batch_reject": "Отклонить пачку"
   },
@@ -106,6 +110,7 @@
     "admin_album_control_header": "Новая пачка предложки\nОт: {author}\nФото: {count}",
     "admin_album_duplicate_warning": "Проверьте повторы: несколько фото одного и того же животного не одобряются.",
     "admin_album_control_line": "{number}. #{post_id}: {animal_type}, {status}, {schedule}{duplicate_note}",
+    "admin_album_view_caption": "Новая пачка предложки\nОт: {author}\nФото: {number}/{count}\n\nЗаявка #{post_id}\nВид: {animal_type}\nСтатус: {status}\nПубликация: {schedule}{duplicate_note}",
     "duplicate_exact_note": "\n\n⚠️ Точный дубль уже известного фото #{photo_id}.",
     "duplicate_similar_note": "\n\n⚠️ Похоже на уже известное фото #{photo_id}. Дистанция: {distance}.",
     "duplicate_exact_short_note": " | точный дубль #{photo_id}",
@@ -153,8 +158,12 @@
     "identify_assignment_expired": "Это фото уже недоступно. Возьмите следующее.",
     "identify_thanks": "Спасибо! Ваш вариант: {animal_type}. Баллы начислятся после проверки админом.",
     "identify_already_answered": "Ответ уже учтен: {animal_type}.",
+    "identify_done_no_photos": "{result}\n\n{no_photos}",
     "identification_batch_photo_caption": "{number}. Предложенный вид: {animal_type}",
     "identification_batch_admin_control": "Пачка #{batch_id}: {animal_type}\nФото: {count}\nНажмите номера фото, которые не подходят, затем подтвердите пачку.",
+    "identification_batch_view_caption": "Пачка #{batch_id}: {animal_type}\nФото: {number}/{count}\nСтатус: {status}\n\nЕсли фото не подходит для этого вида, исключите его из пачки.",
+    "identification_batch_item_included": "будет подтверждено",
+    "identification_batch_item_rejected": "исключено",
     "identification_review_sent": "Отправлено пачек: {count}",
     "identification_batch_completed": "Пачка обработана.\nПодтверждено: {approved}\nОтклонено: {rejected}\nБаллов начислено: {points}"
   }

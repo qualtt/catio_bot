@@ -5,7 +5,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +13,7 @@ from bot.config import config
 from bot.content import bot_content
 from bot.keyboards.inline import (
     get_admin_album_kb,
+    get_admin_album_view_kb,
     get_admin_animal_change_kb,
     get_admin_approval_kb,
     get_admin_menu_kb,
@@ -21,7 +22,7 @@ from bot.keyboards.inline import (
     get_admin_reschedule_cancel_kb,
     get_admin_schedule_kb,
 )
-from bot.services.captions import admin_album_control_text, format_schedule, submission_caption
+from bot.services.captions import admin_album_control_text, admin_album_view_caption, format_schedule, submission_caption
 from bot.services.publisher import publish_post
 from bot.services.scoring import award_post_approval_score
 from db.crud import app_timezone, combine_slot, ensure_animal_type, get_animal_type_name, get_next_auto_slot, now_in_app_tz
@@ -282,16 +283,41 @@ async def load_submission_group_posts(session, post: Post) -> list[Post]:
     return list((await session.execute(stmt)).scalars())
 
 
+async def edit_admin_album_view_message(
+    target,
+    session,
+    post: Post,
+    *,
+    use_media: bool = True,
+) -> None:
+    posts = await load_submission_group_posts(session, post)
+    caption = admin_album_view_caption(posts, post, author=post_author(post))
+    reply_markup = get_admin_album_view_kb(posts, post)
+
+    if use_media:
+        await target.edit_media(
+            media=InputMediaPhoto(media=post.file_id, caption=caption),
+            reply_markup=reply_markup,
+        )
+        return
+
+    await target.edit_caption(caption=caption, reply_markup=reply_markup)
+
+
 async def refresh_admin_album_control(callback: CallbackQuery, session, post: Post) -> None:
     posts = await load_submission_group_posts(session, post)
-    await callback.message.edit_text(
-        admin_album_control_text(posts, author=post_author(post)),
-        reply_markup=get_admin_album_kb(posts),
-    )
+    if callback.message.text:
+        await callback.message.edit_text(
+            admin_album_control_text(posts, author=post_author(post)),
+            reply_markup=get_admin_album_kb(posts),
+        )
+        return
+
+    await edit_admin_album_view_message(callback.message, session, post, use_media=True)
 
 
 def callback_is_album_control(callback: CallbackQuery, post: Post) -> bool:
-    return bool(post.submission_group_id and callback.message and callback.message.text)
+    return bool(post.submission_group_id and callback.message and (callback.message.text or callback.message.photo))
 
 
 async def edit_admin_rejection_result(
@@ -302,10 +328,23 @@ async def edit_admin_rejection_result(
     chat_id: int,
     message_id: int,
     is_album_control: bool,
+    is_album_view: bool = False,
     reason: str | None = None,
 ) -> None:
     if is_album_control:
         posts = await load_submission_group_posts(session, post)
+        if is_album_view:
+            await bot.edit_message_media(
+                chat_id=chat_id,
+                message_id=message_id,
+                media=InputMediaPhoto(
+                    media=post.file_id,
+                    caption=admin_album_view_caption(posts, post, author=post_author(post)),
+                ),
+                reply_markup=get_admin_album_view_kb(posts, post),
+            )
+            return
+
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -549,6 +588,34 @@ async def handle_admin_reschedule_text(message: Message, state: FSMContext):
     await send_admin_schedule(message, new_schedule.date())
 
 
+@admin_router.callback_query(F.data.startswith("admin_album_"))
+async def handle_admin_album_navigation(callback: CallbackQuery):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    try:
+        _, _, direction, post_id_raw = callback.data.split("_", 3)
+        post_id = int(post_id_raw)
+    except (TypeError, ValueError):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+        if not post or not post.submission_group_id:
+            await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+            return
+
+        posts = await load_submission_group_posts(session, post)
+        current_index = next((index for index, item in enumerate(posts) if item.id == post.id), 0)
+        offset = -1 if direction == "prev" else 1
+        target_post = posts[(current_index + offset) % len(posts)]
+        await edit_admin_album_view_message(callback.message, session, target_post, use_media=True)
+
+    await callback.answer()
+
+
 @admin_router.callback_query(F.data.startswith("admin_approve_"))
 async def handle_admin_approve(callback: CallbackQuery, bot: Bot):
     if not is_admin(callback):
@@ -624,10 +691,11 @@ async def handle_admin_reject_start(callback: CallbackQuery, state: FSMContext):
         reject_message_chat_id=callback.message.chat.id,
         reject_message_id=callback.message.message_id,
         reject_is_album_control=is_album_control,
+        reject_is_album_view=bool(callback.message.photo),
     )
     prompt = bot_content.message("admin_rejection_reason_prompt", post_id=post_id)
     reply_markup = get_admin_rejection_reason_kb(post_id, has_duplicate=post.duplicate_of_photo_id is not None)
-    if is_album_control:
+    if is_album_control and callback.message.text:
         await callback.message.edit_text(prompt, reply_markup=reply_markup)
     else:
         await callback.message.edit_caption(caption=prompt, reply_markup=reply_markup)
@@ -649,6 +717,7 @@ async def handle_admin_reject_without_reason(callback: CallbackQuery, state: FSM
             return
 
         is_album_control = callback_is_album_control(callback, post)
+        is_album_view = bool(callback.message.photo)
         await reject_post(session, post)
         await edit_admin_rejection_result(
             bot,
@@ -657,6 +726,7 @@ async def handle_admin_reject_without_reason(callback: CallbackQuery, state: FSM
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
             is_album_control=is_album_control,
+            is_album_view=is_album_view,
         )
         await notify_rejected_post_user(bot, post)
 
@@ -684,6 +754,7 @@ async def handle_admin_reject_as_duplicate(callback: CallbackQuery, state: FSMCo
             return
 
         is_album_control = callback_is_album_control(callback, post)
+        is_album_view = bool(callback.message.photo)
         await reject_post(session, post, reason=reason)
         await edit_admin_rejection_result(
             bot,
@@ -692,6 +763,7 @@ async def handle_admin_reject_as_duplicate(callback: CallbackQuery, state: FSMCo
             chat_id=callback.message.chat.id,
             message_id=callback.message.message_id,
             is_album_control=is_album_control,
+            is_album_view=is_album_view,
             reason=reason,
         )
         await notify_rejected_post_user(bot, post, reason=reason)
@@ -716,6 +788,7 @@ async def handle_admin_rejection_reason_text(message: Message, state: FSMContext
     chat_id = int(data.get("reject_message_chat_id") or message.chat.id)
     message_id = int(data.get("reject_message_id") or 0)
     is_album_control = bool(data.get("reject_is_album_control"))
+    is_album_view = bool(data.get("reject_is_album_view"))
 
     async with async_session() as session:
         post = await load_post(session, post_id)
@@ -734,6 +807,7 @@ async def handle_admin_rejection_reason_text(message: Message, state: FSMContext
                 chat_id=chat_id,
                 message_id=message_id,
                 is_album_control=is_album_control,
+                is_album_view=is_album_view,
                 reason=reason,
             )
         await notify_rejected_post_user(bot, post, reason=reason)

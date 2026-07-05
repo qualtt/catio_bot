@@ -13,7 +13,7 @@ from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 from bot.config import config
 from bot.content import bot_content
 from bot.keyboards.inline import (
-    get_admin_album_kb,
+    get_admin_album_view_kb,
     get_admin_approval_kb,
     get_animal_type_kb,
     get_other_animal_type_kb,
@@ -21,8 +21,7 @@ from bot.keyboards.inline import (
     get_time_slots_kb,
 )
 from bot.services.captions import (
-    admin_album_control_text,
-    album_submission_photo_caption,
+    admin_album_view_caption,
     append_duplicate_note,
     format_schedule,
     submission_caption,
@@ -109,17 +108,6 @@ def _single_photo_prompt_text(data: dict) -> str:
     )
 
 
-def _album_selected_text(data: dict, animal_type: str) -> str:
-    items = _album_items(data)
-    index = int(data.get("album_index") or 0)
-    return bot_content.message(
-        "album_animal_type_selected",
-        current=index + 1,
-        total=len(items),
-        animal_type=animal_type,
-    )
-
-
 def _album_animal_summary(items: list[dict]) -> str:
     return "\n".join(
         bot_content.message(
@@ -199,6 +187,18 @@ def _next_unscheduled_index(schedule_times: list[datetime | None], start_at: int
 
     for index in range(0, min(start_at, len(schedule_times))):
         if schedule_times[index] is None:
+            return index
+
+    return None
+
+
+def _next_untyped_album_index(items: list[dict], start_at: int = 0) -> int | None:
+    for index in range(start_at, len(items)):
+        if not items[index].get("animal_type"):
+            return index
+
+    for index in range(0, min(start_at, len(items))):
+        if not items[index].get("animal_type"):
             return index
 
     return None
@@ -293,7 +293,8 @@ async def _show_album_schedule_calendar(
     year = year or min_date.year
     month = month or min_date.month
 
-    await message.edit_text(
+    await _edit_message_text_or_caption(
+        message,
         bot_content.message(message_key, **_album_schedule_prompt_kwargs(data)),
         reply_markup=await _build_calendar_markup(data, year=year, month=month),
     )
@@ -310,6 +311,13 @@ async def _edit_callback_prompt(callback: CallbackQuery, text: str, reply_markup
         await callback.message.edit_caption(caption=text, reply_markup=reply_markup)
         return
     await callback.message.edit_text(text, reply_markup=reply_markup)
+
+
+async def _edit_message_text_or_caption(message: Message, text: str, reply_markup=None) -> None:
+    if message.photo:
+        await message.edit_caption(caption=text, reply_markup=reply_markup)
+        return
+    await message.edit_text(text, reply_markup=reply_markup)
 
 
 async def _get_or_create_submission_user(message: Message):
@@ -394,29 +402,39 @@ async def _send_album_item_prompt(
     items = _album_items(data)
     index = int(data.get("album_index") or 0)
     item = items[index]
-    sent = await bot.send_photo(
-        chat_id=chat_id,
-        photo=item["file_id"],
-        caption=_album_prompt_text(data, include_warning=include_warning),
-        reply_markup=await get_animal_type_kb(),
-    )
+    caption = _album_prompt_text(data, include_warning=include_warning)
+    reply_markup = await get_animal_type_kb(with_album_nav=True)
+    prompt_chat_id = data.get("album_prompt_chat_id")
+    prompt_message_id = data.get("album_prompt_message_id")
+    if prompt_chat_id and prompt_message_id:
+        await bot.edit_message_media(
+            chat_id=prompt_chat_id,
+            message_id=prompt_message_id,
+            media=InputMediaPhoto(media=item["file_id"], caption=caption),
+            reply_markup=reply_markup,
+        )
+        return
+
+    sent = await bot.send_photo(chat_id=chat_id, photo=item["file_id"], caption=caption, reply_markup=reply_markup)
     await state.update_data(
         album_prompt_chat_id=sent.chat.id,
         album_prompt_message_id=sent.message_id,
     )
 
 
-async def _mark_album_prompt_selected(bot: Bot, state: FSMContext, text: str) -> None:
+async def _edit_album_prompt_caption(bot: Bot, state: FSMContext, text: str, reply_markup=None) -> bool:
     data = await state.get_data()
     chat_id = data.get("album_prompt_chat_id")
     message_id = data.get("album_prompt_message_id")
     if not chat_id or not message_id:
-        return
+        return False
 
     try:
-        await bot.edit_message_caption(chat_id=chat_id, message_id=message_id, caption=text)
+        await bot.edit_message_caption(chat_id=chat_id, message_id=message_id, caption=text, reply_markup=reply_markup)
+        return True
     except TelegramAPIError:
         logger.exception("Failed to edit album prompt message %s", message_id)
+        return False
 
 
 async def _save_album_animal_type(state: FSMContext, animal_type: str) -> tuple[list[dict], int]:
@@ -431,23 +449,31 @@ async def _save_album_animal_type(state: FSMContext, animal_type: str) -> tuple[
     return items, index
 
 
-async def _continue_album_or_ask_schedule(bot: Bot, chat_id: int, state: FSMContext, items: list[dict], index: int) -> None:
-    if index + 1 < len(items):
-        await state.update_data(album_index=index + 1)
+async def _continue_album_or_ask_schedule(
+    bot: Bot,
+    chat_id: int,
+    state: FSMContext,
+    items: list[dict],
+    index: int,
+    source_message: Message | None = None,
+) -> None:
+    next_index = _next_untyped_album_index(items, index + 1)
+    if next_index is not None:
+        await state.update_data(album_index=next_index)
         await state.set_state(SuggestState.waiting_for_animal_type)
         await _send_album_item_prompt(bot, chat_id, state)
         return
 
     await state.set_state(SuggestState.waiting_for_schedule_type)
-    await bot.send_message(
-        chat_id=chat_id,
-        text=bot_content.message(
-            "album_animal_types_done",
-            count=len(items),
-            summary=_album_animal_summary(items),
-        ),
-        reply_markup=get_schedule_choice_kb(),
+    text = bot_content.message(
+        "album_animal_types_done",
+        count=len(items),
+        summary=_album_animal_summary(items),
     )
+    if source_message:
+        await _edit_message_text_or_caption(source_message, text, reply_markup=get_schedule_choice_kb())
+    elif not await _edit_album_prompt_caption(bot, state, text, reply_markup=get_schedule_choice_kb()):
+        await bot.send_message(chat_id=chat_id, text=text, reply_markup=get_schedule_choice_kb())
 
 
 async def _handle_album_animal_selected(
@@ -457,16 +483,19 @@ async def _handle_album_animal_selected(
     animal_type: str,
 ) -> None:
     items, index = await _save_album_animal_type(state, animal_type)
-    data = await state.get_data()
-    await _edit_callback_prompt(callback, _album_selected_text(data, animal_type))
-    await _continue_album_or_ask_schedule(bot, callback.message.chat.id, state, items, index)
+    await _continue_album_or_ask_schedule(
+        bot,
+        callback.message.chat.id,
+        state,
+        items,
+        index,
+        source_message=callback.message,
+    )
     await callback.answer()
 
 
 async def _handle_album_custom_animal_type(message: Message, state: FSMContext, bot: Bot, animal_type: str) -> None:
     items, index = await _save_album_animal_type(state, animal_type)
-    data = await state.get_data()
-    await _mark_album_prompt_selected(bot, state, _album_selected_text(data, animal_type))
     await _continue_album_or_ask_schedule(bot, message.chat.id, state, items, index)
 
 
@@ -605,15 +634,8 @@ async def _send_duplicate_original_to_admin(bot: Bot, *, post) -> None:
 
 async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str) -> None:
     ordered_posts = sorted(posts, key=lambda post: post.submission_group_index or post.id)
-    media = [
-        InputMediaPhoto(
-            media=post.file_id,
-            caption=album_submission_photo_caption(post, post.submission_group_index or index),
-        )
-        for index, post in enumerate(ordered_posts, start=1)
-    ]
 
-    if len(media) == 1:
+    if len(ordered_posts) == 1:
         post = ordered_posts[0]
         await _send_single_submission_to_admin(
             bot,
@@ -625,11 +647,12 @@ async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str)
         )
         return
 
-    await bot.send_media_group(chat_id=config.ADMIN_ID, media=media)
-    await bot.send_message(
+    first_post = ordered_posts[0]
+    await bot.send_photo(
         chat_id=config.ADMIN_ID,
-        text=admin_album_control_text(ordered_posts, author=author),
-        reply_markup=get_admin_album_kb(ordered_posts),
+        photo=first_post.file_id,
+        caption=admin_album_view_caption(ordered_posts, first_post, author=author),
+        reply_markup=get_admin_album_view_kb(ordered_posts, first_post),
     )
     for post in ordered_posts:
         await _send_duplicate_original_to_admin(bot, post=post)
@@ -693,7 +716,8 @@ async def _finalize_album_submission(
         )
 
     await state.clear()
-    await callback.message.edit_text(
+    await _edit_message_text_or_caption(
+        callback.message,
         bot_content.message(
             "album_submitted_manual",
             schedules=_album_schedule_summary(posts),
@@ -867,10 +891,11 @@ async def select_animal_type(callback: CallbackQuery, state: FSMContext, bot: Bo
 
 @suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data == "animal_other")
 async def handle_other_animal_type(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
     await _edit_callback_prompt(
         callback,
         bot_content.message("choose_other_animal_type"),
-        reply_markup=await get_other_animal_type_kb(),
+        reply_markup=await get_other_animal_type_kb(with_album_nav=_is_album_submission(data)),
     )
     await callback.answer()
 
@@ -882,7 +907,7 @@ async def handle_animal_type_back(callback: CallbackQuery, state: FSMContext):
     await _edit_callback_prompt(
         callback,
         text,
-        reply_markup=await get_animal_type_kb(),
+        reply_markup=await get_animal_type_kb(with_album_nav=_is_album_submission(data)),
     )
     await callback.answer()
 
@@ -891,6 +916,26 @@ async def handle_animal_type_back(callback: CallbackQuery, state: FSMContext):
 async def handle_custom_animal_type_button(callback: CallbackQuery, state: FSMContext):
     await state.set_state(SuggestState.waiting_for_custom_animal_type)
     await _edit_callback_prompt(callback, bot_content.message("ask_custom_animal_type"))
+    await callback.answer()
+
+
+@suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data.in_({"album_prev", "album_next"}))
+async def handle_album_animal_navigation(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    if not _is_album_submission(data):
+        await callback.answer()
+        return
+
+    items = _album_items(data)
+    if not items:
+        await callback.answer()
+        return
+
+    current_index = int(data.get("album_index") or 0)
+    offset = -1 if callback.data == "album_prev" else 1
+    next_index = (current_index + offset) % len(items)
+    await state.update_data(album_index=next_index)
+    await _send_album_item_prompt(bot, callback.message.chat.id, state)
     await callback.answer()
 
 
@@ -973,7 +1018,8 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
             )
 
         await state.clear()
-        await callback.message.edit_text(
+        await _edit_message_text_or_caption(
+            callback.message,
             bot_content.message(
                 "album_submitted_auto",
                 schedules=_album_schedule_summary(posts),
@@ -1103,7 +1149,8 @@ async def handle_calendar_day(callback: CallbackQuery, state: FSMContext):
     else:
         message_key = "choose_publication_time"
 
-    await callback.message.edit_text(
+    await _edit_message_text_or_caption(
+        callback.message,
         bot_content.message(message_key, **message_kwargs),
         reply_markup=get_time_slots_kb(target_date, free_times, footer_buttons=footer_buttons),
     )

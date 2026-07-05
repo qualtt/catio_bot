@@ -38,6 +38,17 @@ def test_album_schedule_context_normalizes_state():
     assert schedule_index == 1
 
 
+def test_next_untyped_album_index_wraps_to_missing_item():
+    items = [
+        {"animal_type": "кот"},
+        {},
+        {"animal_type": "птица"},
+    ]
+
+    assert suggest._next_untyped_album_index(items, start_at=2) == 1
+    assert suggest._next_untyped_album_index([{"animal_type": "кот"}], start_at=0) is None
+
+
 def test_photo_type_prompts_include_duplicate_warning_before_type_selection():
     single_text = suggest._single_photo_prompt_text(
         {
@@ -102,6 +113,41 @@ async def test_duplicate_original_missing_file_id_sends_admin_notice():
             "text": "Оригинал для сравнения с заявкой #7 не удалось отправить: у фото #42 нет Telegram file_id.",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_album_submission_to_admin_uses_single_view_message():
+    bot = FakeBot()
+    posts = [
+        SimpleNamespace(
+            id=7,
+            file_id="file-1",
+            animal_type="кот",
+            schedule_time=combine_slot(date(2026, 7, 6), time(10, 0)),
+            duplicate_of_photo_id=None,
+            duplicate_distance=None,
+            submission_group_index=1,
+            status=PostStatus.PENDING,
+        ),
+        SimpleNamespace(
+            id=8,
+            file_id="file-2",
+            animal_type="птица",
+            schedule_time=combine_slot(date(2026, 7, 7), time(10, 0)),
+            duplicate_of_photo_id=None,
+            duplicate_distance=None,
+            submission_group_index=2,
+            status=PostStatus.PENDING,
+        ),
+    ]
+
+    await suggest._send_album_submission_to_admin(bot, posts=posts, author="@user")
+
+    assert bot.sent_messages == []
+    assert len(bot.sent_photos) == 1
+    assert bot.sent_photos[0]["photo"] == "file-1"
+    assert "Фото: 1/2" in bot.sent_photos[0]["caption"]
+    assert bot.sent_photos[0]["reply_markup"] is not None
 
 
 def test_album_selected_slots_can_exclude_current_item():

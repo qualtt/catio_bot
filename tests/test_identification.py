@@ -1,8 +1,10 @@
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
 
+from bot.handlers import identify
 from bot.services import identification
 from db.models.channel_history import ChannelHistory
 from db.models.photo import Photo
@@ -13,6 +15,118 @@ from db.models.photo_identification import (
 )
 from db.models.score_event import ScoreEvent
 from db.models.user import User
+
+
+class FakeIdentifyBot:
+    def __init__(self):
+        self.sent_photos = []
+        self.edited_media = []
+
+    async def send_photo(self, **kwargs):
+        self.sent_photos.append(kwargs)
+        return SimpleNamespace(message_id=777)
+
+    async def edit_message_media(self, **kwargs):
+        self.edited_media.append(kwargs)
+
+
+class FakeAsyncSession:
+    def __init__(self, batch):
+        self.batch = batch
+        self.committed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return None
+
+    async def get(self, model, object_id):
+        return self.batch if object_id == self.batch.id else None
+
+    async def commit(self):
+        self.committed = True
+
+
+@pytest.mark.asyncio
+async def test_send_assignment_edits_existing_photo_message(monkeypatch):
+    bot = FakeIdentifyBot()
+    channel_history = SimpleNamespace(id=1, file_id="file-1", photo=None)
+
+    async def fake_animal_type_kb():
+        return "animal-kb"
+
+    monkeypatch.setattr(identify, "get_identification_animal_type_kb", fake_animal_type_kb)
+
+    result = await identify._send_assignment(bot, 1001, channel_history, target_message_id=55)
+
+    assert result is True
+    assert bot.sent_photos == []
+    assert len(bot.edited_media) == 1
+    assert bot.edited_media[0]["chat_id"] == 1001
+    assert bot.edited_media[0]["message_id"] == 55
+    assert bot.edited_media[0]["media"].media == "file-1"
+    assert bot.edited_media[0]["reply_markup"] == "animal-kb"
+
+
+@pytest.mark.asyncio
+async def test_identification_batch_to_admin_uses_single_view_message(monkeypatch):
+    bot = FakeIdentifyBot()
+    batch = SimpleNamespace(
+        id=9,
+        animal_type="кот",
+        items=[
+            SimpleNamespace(
+                item_number=1,
+                status=identification.ITEM_PENDING,
+                channel_history=SimpleNamespace(id=11, file_id="file-1", photo=None),
+            ),
+            SimpleNamespace(
+                item_number=2,
+                status=identification.ITEM_PENDING,
+                channel_history=SimpleNamespace(id=12, file_id="file-2", photo=None),
+            ),
+        ],
+    )
+    fake_session = FakeAsyncSession(batch)
+    monkeypatch.setattr(identify, "async_session", lambda: fake_session)
+
+    sent = await identify._send_identification_batch_to_admin(bot, batch)
+
+    assert sent is True
+    assert len(bot.sent_photos) == 1
+    assert bot.sent_photos[0]["photo"] == "file-1"
+    assert "Фото: 1/2" in bot.sent_photos[0]["caption"]
+    assert bot.sent_photos[0]["reply_markup"] is not None
+    assert batch.control_message_id == 777
+    assert batch.sent_at is not None
+    assert fake_session.committed is True
+
+
+def test_identification_batch_view_caption_marks_rejected_item():
+    item = SimpleNamespace(
+        item_number=2,
+        status=identification.ITEM_REJECTED,
+        channel_history=SimpleNamespace(id=12, file_id="file-2", photo=None),
+    )
+    batch = SimpleNamespace(
+        id=9,
+        animal_type="кот",
+        items=[
+            SimpleNamespace(
+                item_number=1,
+                status=identification.ITEM_PENDING,
+                channel_history=SimpleNamespace(id=11, file_id="file-1", photo=None),
+            ),
+            item,
+        ],
+    )
+
+    caption = identify._identification_batch_view_caption(batch, item)
+
+    assert "Пачка #9: кот" in caption
+    assert "Фото: 2/2" in caption
+    assert "Статус: исключено" in caption
 
 
 @pytest.mark.asyncio

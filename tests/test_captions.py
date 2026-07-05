@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from bot.services.captions import album_submission_photo_caption, submission_caption
+from bot.services.captions import admin_album_view_caption, album_submission_photo_caption, submission_caption
 from db.models.post import PostStatus
 
 
@@ -51,3 +51,32 @@ def test_album_submission_photo_caption_renders_schedule_in_app_timezone():
 
     assert "2026-07-06 11:00" in caption
     assert "2026-07-06 08:00" not in caption
+
+
+def test_admin_album_view_caption_contains_current_position_and_status():
+    posts = [
+        SimpleNamespace(
+            id=7,
+            animal_type="кот",
+            schedule_time=datetime(2026, 7, 6, 12, 0),
+            duplicate_of_photo_id=None,
+            duplicate_distance=None,
+            submission_group_index=1,
+            status=PostStatus.PENDING,
+        ),
+        SimpleNamespace(
+            id=8,
+            animal_type="птица",
+            schedule_time=datetime(2026, 7, 7, 12, 0),
+            duplicate_of_photo_id=None,
+            duplicate_distance=None,
+            submission_group_index=2,
+            status=PostStatus.APPROVED,
+        ),
+    ]
+
+    caption = admin_album_view_caption(posts, posts[1], author="@user")
+
+    assert "От: @user" in caption
+    assert "Фото: 2/2" in caption
+    assert "Статус: запланировано" in caption
