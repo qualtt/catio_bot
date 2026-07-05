@@ -1,6 +1,6 @@
 from aiogram import Router
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from bot.content import bot_content
 from bot.keyboards.inline import get_main_menu_kb
@@ -9,6 +9,13 @@ from db.crud import get_or_create_user, get_recent_user_posts, get_top_users, ge
 from db.models.post import PostStatus
 
 base_router = Router()
+
+
+async def remove_legacy_reply_keyboard(message: Message) -> None:
+    await message.answer(
+        bot_content.message("reply_keyboard_removed"),
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 @base_router.message(CommandStart())
 async def start_handler(message: Message):
@@ -20,10 +27,12 @@ async def start_handler(message: Message):
             full_name=message.from_user.full_name
         )
     
+    await remove_legacy_reply_keyboard(message)
     await message.answer(bot_content.message("start"), reply_markup=get_main_menu_kb())
 
 @base_router.message(Command("help"))
 async def help_handler(message: Message):
+    await remove_legacy_reply_keyboard(message)
     await message.answer(bot_content.message("help"), reply_markup=get_main_menu_kb())
 
 
@@ -46,7 +55,10 @@ async def profile_handler(message: Message):
         )
         for status in PostStatus
     )
-    await message.answer(bot_content.message("profile", score=user.score, stats=stats_text))
+    await message.answer(
+        bot_content.message("profile", score=user.score, stats=stats_text),
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 @base_router.message(Command("my_posts"))
@@ -61,7 +73,7 @@ async def my_posts_handler(message: Message):
         posts = await get_recent_user_posts(session, user.id)
 
     if not posts:
-        await message.answer(bot_content.message("my_posts_empty"))
+        await message.answer(bot_content.message("my_posts_empty"), reply_markup=ReplyKeyboardRemove())
         return
 
     lines = []
@@ -81,7 +93,10 @@ async def my_posts_handler(message: Message):
             )
         )
 
-    await message.answer(bot_content.message("my_posts_header", posts="\n".join(lines)))
+    await message.answer(
+        bot_content.message("my_posts_header", posts="\n".join(lines)),
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 @base_router.message(Command("top"))
@@ -90,7 +105,7 @@ async def top_handler(message: Message):
         users = await get_top_users(session)
 
     if not users:
-        await message.answer(bot_content.message("top_empty"))
+        await message.answer(bot_content.message("top_empty"), reply_markup=ReplyKeyboardRemove())
         return
 
     lines = []
@@ -98,10 +113,13 @@ async def top_handler(message: Message):
         name = user.username or user.full_name or str(user.telegram_id)
         lines.append(bot_content.message("top_line", position=index, name=name, score=user.score))
 
-    await message.answer(bot_content.message("top_header", users="\n".join(lines)))
+    await message.answer(
+        bot_content.message("top_header", users="\n".join(lines)),
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 @base_router.message(Command("cancel"))
 async def cancel_handler(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer(bot_content.message("cancelled"))
+    await message.answer(bot_content.message("cancelled"), reply_markup=ReplyKeyboardRemove())
