@@ -38,6 +38,7 @@ from db.crud import (
     get_day_availability,
     get_free_slot_times,
     get_next_auto_slot,
+    get_occupied_dates,
     get_or_create_user,
     get_photo_by_telegram_unique_id,
     now_in_app_tz,
@@ -469,20 +470,22 @@ async def _handle_album_custom_animal_type(message: Message, state: FSMContext, 
     await _continue_album_or_ask_schedule(bot, message.chat.id, state, items, index)
 
 
-async def _find_next_free_slot(session, start_at: datetime, selected_slots: set[datetime]) -> datetime:
+async def _find_next_auto_slot_on_empty_day(session, start_at: datetime, selected_slots: set[datetime]) -> datetime:
     max_days_to_scan = config.AUTO_POST_DAYS_AHEAD + 365
     current_date = start_at.date()
+    first_slot = parse_daily_slot_times()[0]
+    occupied_dates = await get_occupied_dates(session, start_date=current_date, days=max_days_to_scan)
+    selected_dates = {slot.date() for slot in selected_slots}
 
     for day_offset in range(max_days_to_scan):
         target_date = current_date + timedelta(days=day_offset)
-        free_times = await get_free_slot_times(session, target_date)
-        for slot_time in free_times:
-            candidate = combine_slot(target_date, slot_time)
-            if candidate < start_at or candidate in selected_slots:
-                continue
+        if target_date in occupied_dates or target_date in selected_dates:
+            continue
+
+        candidate = combine_slot(target_date, first_slot)
+        if candidate >= start_at:
             return candidate
 
-    first_slot = parse_daily_slot_times()[0]
     return combine_slot(current_date + timedelta(days=max_days_to_scan), first_slot)
 
 
@@ -504,7 +507,7 @@ async def _allocate_album_schedule_slots(
         start_at = combine_slot(tomorrow, time.min)
 
     while len(slots) < count:
-        slot = await _find_next_free_slot(session, start_at, selected_slots)
+        slot = await _find_next_auto_slot_on_empty_day(session, start_at, selected_slots)
         slots.append(slot)
         selected_slots.add(slot)
         start_at = slot + timedelta(minutes=1)
@@ -1193,7 +1196,7 @@ async def handle_album_auto_current(callback: CallbackQuery, state: FSMContext, 
     selected_slots = _album_selected_slots(data, exclude_index=schedule_index)
     tomorrow = now_in_app_tz().date() + timedelta(days=1)
     async with async_session() as session:
-        schedule_time = await _find_next_free_slot(
+        schedule_time = await _find_next_auto_slot_on_empty_day(
             session,
             combine_slot(tomorrow, time.min),
             selected_slots,
@@ -1232,7 +1235,7 @@ async def handle_album_auto_remaining(callback: CallbackQuery, state: FSMContext
 
     async with async_session() as session:
         for index in remaining_indices:
-            schedule_time = await _find_next_free_slot(session, start_at, selected_slots)
+            schedule_time = await _find_next_auto_slot_on_empty_day(session, start_at, selected_slots)
             schedule_times[index] = schedule_time
             schedule_auto_flags[index] = True
             selected_slots.add(schedule_time)

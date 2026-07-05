@@ -5,6 +5,7 @@ import pytest
 
 from bot.handlers import suggest
 from db.crud import combine_slot
+from db.models.post import Post, PostStatus
 from db.models.user import User
 
 
@@ -166,6 +167,32 @@ async def test_create_album_posts_preserves_per_photo_schedule_flags(db_session)
     assert [post.is_auto_scheduled for post in posts] == [False, True]
     assert [post.submission_group_index for post in posts] == [1, 2]
     assert {post.submission_group_size for post in posts} == {2}
+
+
+@pytest.mark.asyncio
+async def test_album_auto_schedule_uses_empty_days_not_partially_free_days(db_session, monkeypatch):
+    monkeypatch.setattr(suggest.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    tomorrow = suggest.now_in_app_tz().date() + suggest.timedelta(days=1)
+    user = User(telegram_id=1001, username="user", full_name="User")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        Post(
+            user_id=user.id,
+            file_id="approved",
+            animal_type="кот",
+            status=PostStatus.APPROVED,
+            schedule_time=combine_slot(tomorrow, time(10, 0)),
+        )
+    )
+    await db_session.commit()
+
+    slots = await suggest._allocate_album_schedule_slots(db_session, 2)
+
+    assert slots == [
+        combine_slot(tomorrow + suggest.timedelta(days=1), time(10, 0)),
+        combine_slot(tomorrow + suggest.timedelta(days=2), time(10, 0)),
+    ]
 
 
 @pytest.mark.asyncio

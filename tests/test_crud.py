@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 
 import pytest
 
@@ -60,6 +60,30 @@ async def test_free_slots_and_day_availability_ignore_rejected_posts(db_session,
 
     assert free_times == [time(14, 0)]
     assert availability[target_date] == 1
+
+
+@pytest.mark.asyncio
+async def test_next_auto_slot_uses_empty_days_not_partially_free_days(db_session, monkeypatch):
+    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    monkeypatch.setattr(crud.config, "AUTO_POST_DAYS_AHEAD", 2)
+    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    user = User(telegram_id=1001, username="user", full_name="User")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        Post(
+            user_id=user.id,
+            file_id="approved",
+            animal_type="кот",
+            status=PostStatus.APPROVED,
+            schedule_time=crud.combine_slot(tomorrow, time(10, 0)),
+        )
+    )
+    await db_session.commit()
+
+    auto_slot = await crud.get_next_auto_slot(db_session)
+
+    assert auto_slot == crud.combine_slot(tomorrow + timedelta(days=1), time(10, 0))
 
 
 @pytest.mark.asyncio

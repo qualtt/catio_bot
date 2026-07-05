@@ -427,6 +427,26 @@ async def get_slot_counts(session: AsyncSession, start_date: date | None = None,
     return counts
 
 
+async def get_occupied_dates(session: AsyncSession, start_date: date | None = None, days: int | None = None) -> set[date]:
+    start_date = start_date or now_in_app_tz().date()
+    days = days or config.AUTO_POST_DAYS_AHEAD
+    end_date = start_date + timedelta(days=days)
+    start_dt = combine_slot(start_date, time.min)
+    end_dt = combine_slot(end_date, time.min)
+
+    stmt = select(Post.schedule_time).where(
+        Post.status.in_(OCCUPYING_STATUSES),
+        Post.schedule_time >= start_dt,
+        Post.schedule_time < end_dt,
+    )
+    result = await session.execute(stmt)
+    return {
+        ensure_app_timezone(scheduled_at).date()
+        for scheduled_at in result.scalars()
+        if scheduled_at is not None
+    }
+
+
 async def get_day_availability(session: AsyncSession, start_date: date | None = None, days: int | None = None) -> dict[date, int]:
     start_date = start_date or now_in_app_tz().date()
     days = days or config.AUTO_POST_DAYS_AHEAD
@@ -464,21 +484,20 @@ async def get_free_slot_times(session: AsyncSession, target_date: date) -> list[
 
 async def get_next_auto_slot(session: AsyncSession) -> datetime:
     """
-    Finds the next available auto-slot.
-    Starts from tomorrow up to AUTO_POST_DAYS_AHEAD.
-    If all configured days are filled, uses the first slot after that range.
+    Finds the next auto slot on a day without scheduled publications.
+    Starts from tomorrow and skips days that already have pending/approved/published posts.
     """
     tomorrow = now_in_app_tz().date() + timedelta(days=1)
-    availability = await get_day_availability(session, start_date=tomorrow, days=config.AUTO_POST_DAYS_AHEAD)
-
-    for curr_date, free_slots in availability.items():
-        if free_slots > 0:
-            free_times = await get_free_slot_times(session, curr_date)
-            if free_times:
-                return combine_slot(curr_date, free_times[0])
-
     first_slot = parse_daily_slot_times()[0]
-    return combine_slot(max(availability) + timedelta(days=1), first_slot)
+    max_days_to_scan = config.AUTO_POST_DAYS_AHEAD + 365
+    occupied_dates = await get_occupied_dates(session, start_date=tomorrow, days=max_days_to_scan)
+
+    for day_offset in range(max_days_to_scan):
+        curr_date = tomorrow + timedelta(days=day_offset)
+        if curr_date not in occupied_dates:
+            return combine_slot(curr_date, first_slot)
+
+    return combine_slot(tomorrow + timedelta(days=max_days_to_scan), first_slot)
 
 async def create_post(
     session: AsyncSession,
