@@ -21,7 +21,7 @@ from bot.keyboards.inline import (
     get_admin_reschedule_cancel_kb,
     get_admin_schedule_kb,
 )
-from bot.services.captions import admin_album_control_text, submission_caption
+from bot.services.captions import admin_album_control_text, format_schedule, submission_caption
 from bot.services.publisher import publish_post
 from bot.services.scoring import award_post_approval_score
 from db.crud import app_timezone, combine_slot, ensure_animal_type, get_animal_type_name, get_next_auto_slot, now_in_app_tz
@@ -49,14 +49,9 @@ def post_author(post: Post) -> str:
 
 
 def admin_post_caption(post: Post) -> str:
-    schedule = (
-        post.schedule_time.strftime("%Y-%m-%d %H:%M")
-        if post.schedule_time
-        else bot_content.message("schedule_not_selected")
-    )
     return submission_caption(
         animal_type=post.animal_type,
-        schedule=schedule,
+        schedule=format_schedule(post.schedule_time),
         author=post_author(post),
         duplicate_of_photo_id=post.duplicate_of_photo_id,
         duplicate_distance=post.duplicate_distance,
@@ -78,12 +73,6 @@ def parse_admin_datetime(raw_value: str) -> datetime | None:
             continue
         return parsed.replace(tzinfo=app_timezone())
     return None
-
-
-def format_schedule(value: datetime | None) -> str:
-    if not value:
-        return bot_content.message("schedule_not_selected")
-    return value.astimezone(app_timezone()).strftime("%Y-%m-%d %H:%M")
 
 
 def admin_schedule_text(target_date: date, posts: list[Post]) -> str:
@@ -586,7 +575,7 @@ async def handle_admin_approve(callback: CallbackQuery, bot: Bot):
         score_award = await award_post_approval_score(session, post)
         await session.commit()
 
-        schedule_text = schedule_time.strftime("%Y-%m-%d %H:%M")
+        schedule_text = format_schedule(schedule_time)
         if callback_is_album_control(callback, post):
             await refresh_admin_album_control(callback, session, post)
         else:

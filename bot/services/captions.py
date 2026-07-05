@@ -1,4 +1,11 @@
 from bot.content import bot_content
+from db.crud import ensure_app_timezone
+
+
+def format_schedule(value) -> str:
+    if not value:
+        return bot_content.message("schedule_not_selected")
+    return ensure_app_timezone(value).strftime("%Y-%m-%d %H:%M")
 
 
 def duplicate_note(duplicate_of_photo_id: int | None, duplicate_distance: int | None) -> str:
@@ -53,17 +60,12 @@ def submission_caption(
 
 
 def album_submission_photo_caption(post, number: int) -> str:
-    schedule = (
-        post.schedule_time.strftime("%Y-%m-%d %H:%M")
-        if post.schedule_time
-        else bot_content.message("schedule_not_selected")
-    )
     return bot_content.message(
         "admin_album_photo_caption",
         number=number,
         post_id=post.id,
         animal_type=post.animal_type,
-        schedule=schedule,
+        schedule=format_schedule(post.schedule_time),
         duplicate_note=duplicate_short_note(post.duplicate_of_photo_id, post.duplicate_distance),
     )
 
@@ -81,11 +83,6 @@ def admin_album_control_text(posts, *, author: str) -> str:
     ]
 
     for index, post in enumerate(ordered_posts, start=1):
-        schedule = (
-            post.schedule_time.strftime("%Y-%m-%d %H:%M")
-            if post.schedule_time
-            else bot_content.message("schedule_not_selected")
-        )
         lines.append(
             bot_content.message(
                 "admin_album_control_line",
@@ -93,7 +90,7 @@ def admin_album_control_text(posts, *, author: str) -> str:
                 post_id=post.id,
                 animal_type=post.animal_type,
                 status=bot_content.status_label(post.status),
-                schedule=schedule,
+                schedule=format_schedule(post.schedule_time),
                 duplicate_note=duplicate_short_note(post.duplicate_of_photo_id, post.duplicate_distance),
             )
         )

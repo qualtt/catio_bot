@@ -24,6 +24,7 @@ from bot.services.captions import (
     admin_album_control_text,
     album_submission_photo_caption,
     append_duplicate_note,
+    format_schedule,
     submission_caption,
 )
 from bot.services.photo_storage import hamming_distance, upload_telegram_photo
@@ -69,7 +70,7 @@ def user_display(user) -> str:
 
 
 def _format_schedule(value: datetime) -> str:
-    return value.strftime("%Y-%m-%d %H:%M")
+    return format_schedule(value)
 
 
 def _is_album_submission(data: dict) -> bool:

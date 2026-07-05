@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from bot.services.captions import album_submission_photo_caption, submission_caption
@@ -35,3 +35,19 @@ def test_album_submission_photo_caption_contains_number_status_and_schedule():
     assert "Вид: птица" in caption
     assert "2026-07-06 12:00" in caption
     assert "похоже на #99" in caption
+
+
+def test_album_submission_photo_caption_renders_schedule_in_app_timezone():
+    post = SimpleNamespace(
+        id=7,
+        animal_type="птица",
+        schedule_time=datetime(2026, 7, 6, 8, 0, tzinfo=UTC),
+        duplicate_of_photo_id=None,
+        duplicate_distance=None,
+        status=PostStatus.PENDING,
+    )
+
+    caption = album_submission_photo_caption(post, number=2)
+
+    assert "2026-07-06 11:00" in caption
+    assert "2026-07-06 08:00" not in caption
