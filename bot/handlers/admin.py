@@ -17,6 +17,7 @@ from bot.keyboards.inline import (
     get_admin_approval_kb,
     get_admin_menu_kb,
     get_admin_post_manage_kb,
+    get_admin_rejection_reason_kb,
     get_admin_reschedule_cancel_kb,
     get_admin_schedule_kb,
 )
@@ -32,6 +33,7 @@ admin_router = Router()
 
 class AdminState(StatesGroup):
     waiting_for_reschedule_time = State()
+    waiting_for_rejection_reason = State()
 
 
 def is_admin(callback: CallbackQuery) -> bool:
@@ -116,6 +118,54 @@ def admin_post_manage_text(post: Post) -> str:
         schedule=format_schedule(post.schedule_time),
         author=post_author(post),
     )
+
+
+def is_album_post(post: Post) -> bool:
+    return bool(post.submission_group_id)
+
+
+def normalize_rejection_reason(value: str | None) -> str | None:
+    reason = " ".join((value or "").split())
+    return reason[:500].rstrip() or None
+
+
+def approved_user_notification_text(post: Post, *, schedule: str, points: int) -> str:
+    if is_album_post(post):
+        return bot_content.message(
+            "approved_album_user_notification",
+            animal_type=post.animal_type,
+            schedule=schedule,
+            points=points,
+        )
+    return bot_content.message(
+        "approved_user_notification",
+        animal_type=post.animal_type,
+        schedule=schedule,
+        points=points,
+    )
+
+
+def approved_callback_text(post: Post, *, points: int) -> str:
+    if is_album_post(post):
+        return bot_content.message("approved_album_callback", points=points)
+    return bot_content.message("approved_callback", points=points)
+
+
+def rejected_admin_caption(reason: str | None = None) -> str:
+    if reason:
+        return bot_content.message("rejected_caption_with_reason", reason=reason)
+    return bot_content.message("rejected_caption")
+
+
+def rejected_user_notification_text(post: Post, *, reason: str | None = None) -> str:
+    if is_album_post(post):
+        if reason:
+            return bot_content.message("rejected_album_user_notification_with_reason", reason=reason)
+        return bot_content.message("rejected_album_user_notification")
+
+    if reason:
+        return bot_content.message("rejected_user_notification_with_reason", reason=reason)
+    return bot_content.message("rejected_user_notification")
 
 
 async def load_post(session, post_id: int) -> Post | None:
@@ -226,6 +276,51 @@ async def refresh_admin_album_control(callback: CallbackQuery, session, post: Po
 
 def callback_is_album_control(callback: CallbackQuery, post: Post) -> bool:
     return bool(post.submission_group_id and callback.message and callback.message.text)
+
+
+async def edit_admin_rejection_result(
+    bot: Bot,
+    session,
+    post: Post,
+    *,
+    chat_id: int,
+    message_id: int,
+    is_album_control: bool,
+    reason: str | None = None,
+) -> None:
+    if is_album_control:
+        posts = await load_submission_group_posts(session, post)
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=admin_album_control_text(posts, author=post_author(post)),
+            reply_markup=get_admin_album_kb(posts),
+        )
+        return
+
+    await bot.edit_message_caption(
+        chat_id=chat_id,
+        message_id=message_id,
+        caption=rejected_admin_caption(reason),
+    )
+
+
+async def reject_post(session, post: Post, *, reason: str | None = None) -> None:
+    post.status = PostStatus.REJECTED
+    await session.commit()
+
+
+async def notify_rejected_post_user(bot: Bot, post: Post, *, reason: str | None = None) -> None:
+    if not post.user:
+        return
+
+    try:
+        await bot.send_message(
+            chat_id=post.user.telegram_id,
+            text=rejected_user_notification_text(post, reason=reason),
+        )
+    except TelegramAPIError:
+        pass
 
 
 async def send_admin_schedule(target, target_date: date, *, callback_text: str | None = None) -> None:
@@ -479,20 +574,19 @@ async def handle_admin_approve(callback: CallbackQuery, bot: Bot):
         try:
             await bot.send_message(
                 chat_id=post.user.telegram_id,
-                text=bot_content.message(
-                    "approved_user_notification",
-                    animal_type=post.animal_type,
+                text=approved_user_notification_text(
+                    post,
                     schedule=schedule_text,
                     points=score_award.points,
-                )
+                ),
             )
         except TelegramAPIError:
             pass
-        await callback.answer(bot_content.message("approved_callback", points=score_award.points))
+        await callback.answer(approved_callback_text(post, points=score_award.points))
 
 
 @admin_router.callback_query(F.data.startswith("admin_reject_"))
-async def handle_admin_reject(callback: CallbackQuery, bot: Bot):
+async def handle_admin_reject_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
@@ -506,23 +600,93 @@ async def handle_admin_reject(callback: CallbackQuery, bot: Bot):
             await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
             return
 
-        post.status = PostStatus.REJECTED
-        await session.commit()
+        is_album_control = callback_is_album_control(callback, post)
 
-        if callback_is_album_control(callback, post):
-            await refresh_admin_album_control(callback, session, post)
-        else:
-            await callback.message.edit_caption(caption=bot_content.message("rejected_caption"))
+    await state.set_state(AdminState.waiting_for_rejection_reason)
+    await state.update_data(
+        reject_post_id=post_id,
+        reject_message_chat_id=callback.message.chat.id,
+        reject_message_id=callback.message.message_id,
+        reject_is_album_control=is_album_control,
+    )
+    prompt = bot_content.message("admin_rejection_reason_prompt", post_id=post_id)
+    reply_markup = get_admin_rejection_reason_kb(post_id)
+    if is_album_control:
+        await callback.message.edit_text(prompt, reply_markup=reply_markup)
+    else:
+        await callback.message.edit_caption(caption=prompt, reply_markup=reply_markup)
+    await callback.answer()
 
-        try:
-            await bot.send_message(
-                chat_id=post.user.telegram_id,
-                text=bot_content.message("rejected_user_notification"),
-            )
-        except TelegramAPIError:
-            pass
 
+@admin_router.callback_query(F.data.startswith("admin_rejectreason_none_"))
+async def handle_admin_reject_without_reason(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    post_id = int(callback.data.rsplit("_", 1)[1])
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+        if not post or post.status != PostStatus.PENDING:
+            await state.clear()
+            await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+            return
+
+        is_album_control = callback_is_album_control(callback, post)
+        await reject_post(session, post)
+        await edit_admin_rejection_result(
+            bot,
+            session,
+            post,
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            is_album_control=is_album_control,
+        )
+        await notify_rejected_post_user(bot, post)
+
+    await state.clear()
     await callback.answer(bot_content.message("rejected_callback"))
+
+
+@admin_router.message(AdminState.waiting_for_rejection_reason)
+async def handle_admin_rejection_reason_text(message: Message, state: FSMContext, bot: Bot):
+    if message.from_user.id != config.ADMIN_ID:
+        await message.answer(bot_content.message("not_admin"))
+        return
+
+    reason = normalize_rejection_reason(message.text)
+    if reason is None:
+        await message.answer(bot_content.message("admin_rejection_reason_empty"))
+        return
+
+    data = await state.get_data()
+    post_id = int(data.get("reject_post_id") or 0)
+    chat_id = int(data.get("reject_message_chat_id") or message.chat.id)
+    message_id = int(data.get("reject_message_id") or 0)
+    is_album_control = bool(data.get("reject_is_album_control"))
+
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+        if not post or post.status != PostStatus.PENDING:
+            await state.clear()
+            await message.answer(bot_content.message("post_processed_or_missing"))
+            return
+
+        await reject_post(session, post, reason=reason)
+        if message_id:
+            await edit_admin_rejection_result(
+                bot,
+                session,
+                post,
+                chat_id=chat_id,
+                message_id=message_id,
+                is_album_control=is_album_control,
+                reason=reason,
+            )
+        await notify_rejected_post_user(bot, post, reason=reason)
+
+    await state.clear()
+    await message.answer(bot_content.message("rejected_callback"))
 
 
 @admin_router.callback_query(F.data.startswith("admin_change_"))
@@ -543,11 +707,12 @@ async def handle_admin_change(callback: CallbackQuery):
 
 
 @admin_router.callback_query(F.data.startswith("admin_back_"))
-async def handle_admin_back(callback: CallbackQuery):
+async def handle_admin_back(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
 
+    await state.clear()
     post_id = int(callback.data.split("_")[2])
     async with async_session() as session:
         post = await load_post(session, post_id)

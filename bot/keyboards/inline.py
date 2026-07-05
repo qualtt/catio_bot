@@ -147,6 +147,17 @@ def get_admin_reschedule_cancel_kb(return_date: date) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def get_admin_rejection_reason_kb(post_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=bot_content.button("reject_without_reason"),
+        callback_data=f"admin_rejectreason_none_{post_id}",
+    )
+    builder.button(text=bot_content.button("back"), callback_data=f"admin_back_{post_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def get_admin_album_kb(posts) -> InlineKeyboardMarkup | None:
     pending_posts = [
         post
