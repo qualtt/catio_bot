@@ -9,6 +9,19 @@ from db.models.user import User
 
 
 @pytest.mark.asyncio
+async def test_create_channel_history_item_normalizes_numeric_media_group_id(db_session):
+    item = await crud.create_channel_history_item(
+        db_session,
+        chat_id=-1001452038450,
+        message_id=902,
+        file_id="file-id",
+        media_group_id=13706980407056186,
+    )
+
+    assert item.media_group_id == "13706980407056186"
+
+
+@pytest.mark.asyncio
 async def test_free_slots_and_day_availability_ignore_rejected_posts(db_session, monkeypatch):
     monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00,14:00")
     target_date = date(2026, 7, 6)

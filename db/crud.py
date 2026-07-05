@@ -360,10 +360,11 @@ async def create_channel_history_item(
     photo_id: int | None = None,
     published_at: datetime | None = None,
     caption: str | None = None,
-    media_group_id: str | None = None,
+    media_group_id: str | int | None = None,
     animal_type: str | None = None,
     identified_by: int | None = None,
 ) -> ChannelHistory:
+    normalized_media_group_id = str(media_group_id) if media_group_id is not None else None
     existing = await get_channel_history_item(session, message_id=message_id, chat_id=chat_id)
     if existing:
         if chat_id is not None:
@@ -374,7 +375,7 @@ async def create_channel_history_item(
         if published_at is not None:
             existing.published_at = published_at
         existing.caption = caption
-        existing.media_group_id = media_group_id
+        existing.media_group_id = normalized_media_group_id
         if animal_type is not None:
             existing.animal_type = animal_type
         if identified_by is not None:
@@ -390,7 +391,7 @@ async def create_channel_history_item(
         photo_id=photo_id,
         published_at=published_at,
         caption=caption,
-        media_group_id=media_group_id,
+        media_group_id=normalized_media_group_id,
         animal_type=animal_type,
         identified_by=identified_by,
     )
