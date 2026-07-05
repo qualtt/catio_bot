@@ -202,6 +202,30 @@ async def queue_identification_item_if_ready(
     return True
 
 
+async def queue_ready_identification_items(session: AsyncSession, *, limit: int = 500) -> int:
+    stmt = (
+        select(ChannelHistory.id)
+        .join(PhotoIdentificationVote, PhotoIdentificationVote.channel_history_id == ChannelHistory.id)
+        .where(
+            ChannelHistory.photo_id.is_not(None),
+            ChannelHistory.animal_type.is_(None),
+            or_(ChannelHistory.review_status.is_(None), ChannelHistory.review_status == REVIEW_OPEN),
+            PhotoIdentificationVote.reviewed_at.is_(None),
+        )
+        .group_by(ChannelHistory.id)
+        .order_by(ChannelHistory.id.asc())
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+
+    queued_count = 0
+    for channel_history_id in result.scalars():
+        if await queue_identification_item_if_ready(session, channel_history_id):
+            queued_count += 1
+
+    return queued_count
+
+
 async def submit_identification_vote(
     session: AsyncSession,
     *,
@@ -252,6 +276,8 @@ async def create_ready_identification_batches(
     min_size: int | None = None,
     max_batches: int = 5,
 ) -> list[int]:
+    await queue_ready_identification_items(session)
+
     min_size = max(min_size if min_size is not None else config.IDENTIFICATION_BATCH_SIZE, 1)
     batch_size = max(config.IDENTIFICATION_BATCH_SIZE, 1)
     result = await session.execute(

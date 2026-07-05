@@ -132,6 +132,29 @@ async def test_create_ready_identification_batches_can_send_single_ready_item(db
 
 
 @pytest.mark.asyncio
+async def test_create_ready_identification_batches_queues_existing_votes(db_session, monkeypatch):
+    monkeypatch.setattr(identification.config, "IDENTIFICATION_VOTES_REQUIRED", 1)
+    monkeypatch.setattr(identification.config, "IDENTIFICATION_BATCH_SIZE", 10)
+
+    user = User(telegram_id=1001, username="one", full_name="One")
+    photo = Photo(storage_bucket="bucket", storage_key="photos/1.jpg")
+    history = ChannelHistory(message_id=10, file_id="file-1", photo=photo)
+    db_session.add_all([user, photo, history])
+    await db_session.flush()
+    db_session.add(PhotoIdentificationVote(channel_history_id=history.id, user_id=user.id, animal_type="кот"))
+    await db_session.commit()
+
+    batch_ids = await identification.create_ready_identification_batches(db_session, min_size=1)
+
+    assert len(batch_ids) == 1
+    assert history.review_status == identification.REVIEW_SENT
+    assert history.suggested_animal_type == "кот"
+    batch = await db_session.get(PhotoIdentificationBatch, batch_ids[0])
+    assert batch is not None
+    assert batch.animal_type == "кот"
+
+
+@pytest.mark.asyncio
 async def test_finalize_identification_batch_awards_points_for_approved_votes(db_session, monkeypatch):
     monkeypatch.setattr(identification.config, "SCORE_OLD_PHOTO_CORRECT", 3)
     monkeypatch.setattr(identification.config, "SCORE_OLD_PHOTO_DAILY_CAP", 30)
