@@ -121,5 +121,7 @@ async def top_handler(message: Message):
 
 @base_router.message(Command("cancel"))
 async def cancel_handler(message: Message, state: FSMContext):
+    current_state = await state.get_state()
     await state.clear()
-    await message.answer(bot_content.message("cancelled"), reply_markup=ReplyKeyboardRemove())
+    message_key = "cancelled" if current_state else "nothing_to_cancel"
+    await message.answer(bot_content.message(message_key), reply_markup=ReplyKeyboardRemove())

@@ -61,6 +61,7 @@
     "top_header": "Топ участников:\n{users}",
     "top_line": "{position}. {name}: {score}",
     "cancelled": "Текущая отправка отменена.",
+    "nothing_to_cancel": "Сейчас нечего отменять. Уже отправленные на модерацию заявки не меняются.",
     "reply_keyboard_removed": "Старая клавиатура убрана.",
     "ask_animal_type": "Кто на фото?",
     "album_photo_prompt": "Фото {current} из {total}. Кто на фото?",
