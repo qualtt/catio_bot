@@ -129,6 +129,33 @@ def normalize_rejection_reason(value: str | None) -> str | None:
     return reason[:500].rstrip() or None
 
 
+def duplicate_rejection_reason(post: Post) -> str | None:
+    if post.duplicate_of_photo_id is None:
+        return None
+
+    if post.duplicate_distance == 0:
+        return bot_content.message("duplicate_exact_rejection_reason", photo_id=post.duplicate_of_photo_id)
+
+    distance = post.duplicate_distance if post.duplicate_distance is not None else "unknown"
+    return bot_content.message(
+        "duplicate_similar_rejection_reason",
+        photo_id=post.duplicate_of_photo_id,
+        distance=distance,
+    )
+
+
+def normalize_duplicate_rejection_reason(value: str | None, post: Post) -> str | None:
+    reason = normalize_rejection_reason(value)
+    if reason is None:
+        return None
+
+    reason_words = set(reason.casefold().replace("ё", "е").split())
+    if reason_words & {"копия", "дубль", "дубликат", "повтор"}:
+        return duplicate_rejection_reason(post) or reason
+
+    return reason
+
+
 def approved_user_notification_text(post: Post, *, schedule: str, points: int) -> str:
     if is_album_post(post):
         return bot_content.message(
@@ -610,7 +637,7 @@ async def handle_admin_reject_start(callback: CallbackQuery, state: FSMContext):
         reject_is_album_control=is_album_control,
     )
     prompt = bot_content.message("admin_rejection_reason_prompt", post_id=post_id)
-    reply_markup = get_admin_rejection_reason_kb(post_id)
+    reply_markup = get_admin_rejection_reason_kb(post_id, has_duplicate=post.duplicate_of_photo_id is not None)
     if is_album_control:
         await callback.message.edit_text(prompt, reply_markup=reply_markup)
     else:
@@ -648,14 +675,50 @@ async def handle_admin_reject_without_reason(callback: CallbackQuery, state: FSM
     await callback.answer(bot_content.message("rejected_callback"))
 
 
+@admin_router.callback_query(F.data.startswith("admin_rejectreason_duplicate_"))
+async def handle_admin_reject_as_duplicate(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    post_id = int(callback.data.rsplit("_", 1)[1])
+    async with async_session() as session:
+        post = await load_post(session, post_id)
+        if not post or post.status != PostStatus.PENDING:
+            await state.clear()
+            await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+            return
+
+        reason = duplicate_rejection_reason(post)
+        if reason is None:
+            await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+            return
+
+        is_album_control = callback_is_album_control(callback, post)
+        await reject_post(session, post, reason=reason)
+        await edit_admin_rejection_result(
+            bot,
+            session,
+            post,
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.message_id,
+            is_album_control=is_album_control,
+            reason=reason,
+        )
+        await notify_rejected_post_user(bot, post, reason=reason)
+
+    await state.clear()
+    await callback.answer(bot_content.message("rejected_callback"))
+
+
 @admin_router.message(AdminState.waiting_for_rejection_reason)
 async def handle_admin_rejection_reason_text(message: Message, state: FSMContext, bot: Bot):
     if message.from_user.id != config.ADMIN_ID:
         await message.answer(bot_content.message("not_admin"))
         return
 
-    reason = normalize_rejection_reason(message.text)
-    if reason is None:
+    raw_reason = normalize_rejection_reason(message.text)
+    if raw_reason is None:
         await message.answer(bot_content.message("admin_rejection_reason_empty"))
         return
 
@@ -672,6 +735,7 @@ async def handle_admin_rejection_reason_text(message: Message, state: FSMContext
             await message.answer(bot_content.message("post_processed_or_missing"))
             return
 
+        reason = normalize_duplicate_rejection_reason(raw_reason, post)
         await reject_post(session, post, reason=reason)
         if message_id:
             await edit_admin_rejection_result(

@@ -3,7 +3,9 @@ from types import SimpleNamespace
 from bot.handlers.admin import (
     approved_callback_text,
     approved_user_notification_text,
+    duplicate_rejection_reason,
     normalize_rejection_reason,
+    normalize_duplicate_rejection_reason,
     rejected_admin_caption,
     rejected_user_notification_text,
 )
@@ -13,6 +15,8 @@ def make_post(*, submission_group_id=None):
     return SimpleNamespace(
         animal_type="кот",
         submission_group_id=submission_group_id,
+        duplicate_of_photo_id=None,
+        duplicate_distance=None,
     )
 
 
@@ -43,6 +47,17 @@ def test_rejection_reason_is_normalized_and_rendered_for_user_and_admin():
     assert reason == "не подходит качество"
     assert "Причина: не подходит качество" in rejected_admin_caption(reason)
     assert "Причина: не подходит качество" in rejected_user_notification_text(post, reason=reason)
+
+
+def test_duplicate_rejection_reason_can_be_selected_with_short_text():
+    post = make_post()
+    post.duplicate_of_photo_id = 42
+    post.duplicate_distance = 0
+
+    reason = normalize_duplicate_rejection_reason(" есть копия ", post)
+
+    assert reason == duplicate_rejection_reason(post)
+    assert reason == "копия уже известного фото #42"
 
 
 def test_album_rejection_text_uses_album_wording():

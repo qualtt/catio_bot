@@ -23,6 +23,7 @@ from bot.keyboards.inline import (
 from bot.services.captions import (
     admin_album_control_text,
     album_submission_photo_caption,
+    append_duplicate_note,
     submission_caption,
 )
 from bot.services.photo_storage import hamming_distance, upload_telegram_photo
@@ -82,14 +83,28 @@ def _album_items(data: dict) -> list[dict]:
 def _album_prompt_text(data: dict, *, include_warning: bool = False) -> str:
     items = _album_items(data)
     index = int(data.get("album_index") or 0)
+    item = items[index] if items else {}
     text = bot_content.message(
         "album_photo_prompt",
         current=index + 1,
         total=len(items),
     )
+    text = append_duplicate_note(
+        text,
+        item.get("duplicate_of_photo_id"),
+        item.get("duplicate_distance"),
+    )
     if include_warning:
         text += "\n\n" + bot_content.message("album_duplicate_warning")
     return text
+
+
+def _single_photo_prompt_text(data: dict) -> str:
+    return append_duplicate_note(
+        bot_content.message("ask_animal_type"),
+        data.get("duplicate_of_photo_id"),
+        data.get("duplicate_distance"),
+    )
 
 
 def _album_selected_text(data: dict, animal_type: str) -> str:
@@ -527,6 +542,7 @@ async def _create_album_posts(
             submission_group_index=index,
             submission_group_size=len(items),
         )
+        await session.refresh(post, ["duplicate_of_photo"])
         posts.append(post)
 
     return posts
@@ -552,6 +568,34 @@ async def _send_single_submission_to_admin(
             duplicate_distance=post.duplicate_distance,
         ),
         reply_markup=get_admin_approval_kb(post.id),
+    )
+    await _send_duplicate_original_to_admin(bot, post=post)
+
+
+async def _send_duplicate_original_to_admin(bot: Bot, *, post) -> None:
+    if post.duplicate_of_photo_id is None:
+        return
+
+    original = getattr(post, "duplicate_of_photo", None)
+    if original is None or not original.telegram_file_id:
+        await bot.send_message(
+            chat_id=config.ADMIN_ID,
+            text=bot_content.message(
+                "admin_duplicate_original_unavailable",
+                post_id=post.id,
+                photo_id=post.duplicate_of_photo_id,
+            ),
+        )
+        return
+
+    await bot.send_photo(
+        chat_id=config.ADMIN_ID,
+        photo=original.telegram_file_id,
+        caption=bot_content.message(
+            "admin_duplicate_original_caption",
+            post_id=post.id,
+            photo_id=post.duplicate_of_photo_id,
+        ),
     )
 
 
@@ -583,6 +627,8 @@ async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str)
         text=admin_album_control_text(ordered_posts, author=author),
         reply_markup=get_admin_album_kb(ordered_posts),
     )
+    for post in ordered_posts:
+        await _send_duplicate_original_to_admin(bot, post=post)
 
 
 async def _first_album_schedule_conflict(session, schedule_times: list[datetime]) -> int | None:
@@ -708,8 +754,9 @@ async def _process_single_photo_message(message: Message, state: FSMContext, bot
         duplicate_of_photo_id=item.get("duplicate_of_photo_id"),
         duplicate_distance=item.get("duplicate_distance"),
     )
+    data = await state.get_data()
     await state.set_state(SuggestState.waiting_for_animal_type)
-    await message.reply(bot_content.message("ask_animal_type"), reply_markup=await get_animal_type_kb())
+    await message.reply(_single_photo_prompt_text(data), reply_markup=await get_animal_type_kb())
 
 
 async def _process_album_messages(messages: list[Message], state: FSMContext, bot: Bot) -> None:
@@ -827,7 +874,7 @@ async def handle_other_animal_type(callback: CallbackQuery, state: FSMContext):
 @suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data == "animal_back")
 async def handle_animal_type_back(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    text = _album_prompt_text(data) if _is_album_submission(data) else bot_content.message("ask_animal_type")
+    text = _album_prompt_text(data) if _is_album_submission(data) else _single_photo_prompt_text(data)
     await _edit_callback_prompt(
         callback,
         text,
@@ -952,6 +999,7 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
             duplicate_of_photo_id=duplicate_of_photo_id,
             duplicate_distance=duplicate_distance,
         )
+        await session.refresh(post, ["duplicate_of_photo"])
 
     await state.clear()
     await callback.message.edit_text(
@@ -1111,6 +1159,7 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
                 duplicate_of_photo_id=duplicate_of_photo_id,
                 duplicate_distance=duplicate_distance,
             )
+            await session.refresh(post, ["duplicate_of_photo"])
 
     await state.clear()
 

@@ -147,8 +147,13 @@ def get_admin_reschedule_cancel_kb(return_date: date) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_admin_rejection_reason_kb(post_id: int) -> InlineKeyboardMarkup:
+def get_admin_rejection_reason_kb(post_id: int, *, has_duplicate: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if has_duplicate:
+        builder.button(
+            text=bot_content.button("reject_as_duplicate"),
+            callback_data=f"admin_rejectreason_duplicate_{post_id}",
+        )
     builder.button(
         text=bot_content.button("reject_without_reason"),
         callback_data=f"admin_rejectreason_none_{post_id}",

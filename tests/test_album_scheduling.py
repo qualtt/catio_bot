@@ -1,10 +1,23 @@
 from datetime import date, time
+from types import SimpleNamespace
 
 import pytest
 
 from bot.handlers import suggest
 from db.crud import combine_slot
 from db.models.user import User
+
+
+class FakeBot:
+    def __init__(self):
+        self.sent_photos = []
+        self.sent_messages = []
+
+    async def send_photo(self, **kwargs):
+        self.sent_photos.append(kwargs)
+
+    async def send_message(self, **kwargs):
+        self.sent_messages.append(kwargs)
 
 
 def test_album_schedule_context_normalizes_state():
@@ -22,6 +35,72 @@ def test_album_schedule_context_normalizes_state():
     assert schedule_times[1] is None
     assert schedule_auto_flags == [True, False]
     assert schedule_index == 1
+
+
+def test_photo_type_prompts_include_duplicate_warning_before_type_selection():
+    single_text = suggest._single_photo_prompt_text(
+        {
+            "duplicate_of_photo_id": 42,
+            "duplicate_distance": 0,
+        }
+    )
+    album_text = suggest._album_prompt_text(
+        {
+            "album_index": 0,
+            "album_items": [
+                {
+                    "duplicate_of_photo_id": 99,
+                    "duplicate_distance": 3,
+                }
+            ],
+        }
+    )
+
+    assert single_text.startswith("Кто на фото?")
+    assert "точный дубль" in single_text.lower()
+    assert album_text.startswith("Фото 1 из 1. Кто на фото?")
+    assert "Похоже на уже известное фото #99" in album_text
+
+
+@pytest.mark.asyncio
+async def test_duplicate_original_is_sent_to_admin_for_comparison():
+    bot = FakeBot()
+    post = SimpleNamespace(
+        id=7,
+        duplicate_of_photo_id=42,
+        duplicate_of_photo=SimpleNamespace(telegram_file_id="original-file-id"),
+    )
+
+    await suggest._send_duplicate_original_to_admin(bot, post=post)
+
+    assert bot.sent_messages == []
+    assert bot.sent_photos == [
+        {
+            "chat_id": 1,
+            "photo": "original-file-id",
+            "caption": "Оригинал для сравнения с заявкой #7: фото #42.",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_original_missing_file_id_sends_admin_notice():
+    bot = FakeBot()
+    post = SimpleNamespace(
+        id=7,
+        duplicate_of_photo_id=42,
+        duplicate_of_photo=SimpleNamespace(telegram_file_id=None),
+    )
+
+    await suggest._send_duplicate_original_to_admin(bot, post=post)
+
+    assert bot.sent_photos == []
+    assert bot.sent_messages == [
+        {
+            "chat_id": 1,
+            "text": "Оригинал для сравнения с заявкой #7 не удалось отправить: у фото #42 нет Telegram file_id.",
+        }
+    ]
 
 
 def test_album_selected_slots_can_exclude_current_item():

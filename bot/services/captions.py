@@ -31,6 +31,10 @@ def duplicate_short_note(duplicate_of_photo_id: int | None, duplicate_distance: 
     )
 
 
+def append_duplicate_note(text: str, duplicate_of_photo_id: int | None, duplicate_distance: int | None) -> str:
+    return text + duplicate_note(duplicate_of_photo_id, duplicate_distance)
+
+
 def submission_caption(
     *,
     animal_type: str | None,
