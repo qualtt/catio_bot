@@ -91,7 +91,16 @@ def get_admin_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("admin_schedule"), callback_data="admin_schedule_today")
     builder.button(text=bot_content.button("admin_stats"), callback_data="admin_stats")
+    builder.button(text=bot_content.button("admin_broadcast"), callback_data="admin_broadcast")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def get_admin_broadcast_confirm_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=bot_content.button("admin_broadcast_send"), callback_data="admin_broadcast_send")
+    builder.button(text=bot_content.button("admin_broadcast_cancel"), callback_data="admin_broadcast_cancel")
+    builder.adjust(2)
     return builder.as_markup()
 
 
@@ -362,15 +371,15 @@ def get_tournament_start_kb(tournament_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_tournament_match_kb(match) -> InlineKeyboardMarkup:
+def get_tournament_match_kb(match, *, left_entry_id: int, right_entry_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text=bot_content.button("tournament_pick_left"),
-        callback_data=f"tourn_vote_{match.id}_{match.left_entry_id}",
+        callback_data=f"tourn_vote_{match.id}_{left_entry_id}",
     )
     builder.button(
         text=bot_content.button("tournament_pick_right"),
-        callback_data=f"tourn_vote_{match.id}_{match.right_entry_id}",
+        callback_data=f"tourn_vote_{match.id}_{right_entry_id}",
     )
     builder.button(text=bot_content.button("tournament_refresh"), callback_data=f"tourn_open_{match.tournament_id}")
     builder.adjust(2, 1)

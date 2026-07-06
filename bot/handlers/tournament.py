@@ -10,12 +10,14 @@ from sqlalchemy import func, select
 from bot.content import bot_content
 from bot.keyboards.inline import get_tournament_match_kb, get_tournament_start_kb
 from bot.services.tournaments import (
+    TournamentMatchView,
     get_current_tournament,
     get_next_open_match_for_user,
     get_tournament,
     tournament_match_photo_input,
     tournament_period_label,
     tournament_type_label,
+    tournament_voting_deadline_label,
     submit_tournament_vote,
 )
 from db.crud import get_or_create_user
@@ -26,7 +28,6 @@ from db.models.photo_tournament import (
     TOURNAMENT_RUNNING,
     PhotoTournament,
     PhotoTournamentEntry,
-    PhotoTournamentMatch,
 )
 
 
@@ -53,18 +54,31 @@ async def _tournament_status_text(session, tournament: PhotoTournament) -> str:
         status=_tournament_status_label(tournament.status),
         round_number=tournament.current_round_number,
         entry_count=entry_count,
+        voting_deadline=tournament_voting_deadline_label(tournament),
     )
 
 
-def _match_caption(match: PhotoTournamentMatch) -> str:
+async def _tournament_results_text(session, tournament: PhotoTournament) -> str:
+    status_text = await _tournament_status_text(session, tournament)
+    return bot_content.message(
+        "tournament_results",
+        status=status_text,
+        winner_photo_id=tournament.winner_photo_id or "?",
+        favorite_photo_id=tournament.favorite_photo_id or "?",
+    )
+
+
+def _match_caption(view: TournamentMatchView) -> str:
+    match = view.match
     return bot_content.message(
         "tournament_match_caption",
         tournament_type=tournament_type_label(match.tournament.type),
         period=tournament_period_label(match.tournament),
         round_number=match.round.round_number,
         match_number=match.match_number,
-        left_photo_id=match.left_entry.photo_id,
-        right_photo_id=match.right_entry.photo_id if match.right_entry else "?",
+        left_photo_id=view.left_entry.photo_id,
+        right_photo_id=view.right_entry.photo_id,
+        voting_deadline=tournament_voting_deadline_label(match.tournament),
     )
 
 
@@ -104,11 +118,15 @@ async def _send_or_edit_match(
     *,
     chat_id: int,
     source_message: Message | None,
-    match: PhotoTournamentMatch,
+    view: TournamentMatchView,
 ) -> None:
-    photo = await tournament_match_photo_input(match)
-    caption = _match_caption(match)
-    reply_markup = get_tournament_match_kb(match)
+    photo = await tournament_match_photo_input(view)
+    caption = _match_caption(view)
+    reply_markup = get_tournament_match_kb(
+        view.match,
+        left_entry_id=view.left_entry.id,
+        right_entry_id=view.right_entry.id,
+    )
 
     if source_message and source_message.photo:
         try:
@@ -145,13 +163,26 @@ async def _show_next_match(
             username=telegram_user.username,
             full_name=telegram_user.full_name,
         )
-        match = await get_next_open_match_for_user(
+        tournament = (
+            await get_tournament(session, tournament_id)
+            if tournament_id is not None
+            else await get_current_tournament(session)
+        )
+        if tournament is not None and tournament.status == TOURNAMENT_COMPLETED:
+            await _show_status(
+                bot,
+                chat_id=chat_id,
+                source_message=source_message,
+                text=await _tournament_results_text(session, tournament),
+            )
+            return
+
+        view = await get_next_open_match_for_user(
             session,
             user_id=user.id,
             tournament_id=tournament_id,
         )
-        if match is None:
-            tournament = await get_tournament(session, tournament_id) if tournament_id else await get_current_tournament(session)
+        if view is None:
             if tournament is None or tournament.status != TOURNAMENT_RUNNING:
                 await _show_status(
                     bot,
@@ -166,13 +197,13 @@ async def _show_next_match(
                 bot,
                 chat_id=chat_id,
                 source_message=source_message,
-                text=bot_content.message("tournament_round_done", status=status_text),
+                text=bot_content.message("tournament_voting_done", status=status_text),
                 tournament_id=tournament.id,
             )
             return
 
     try:
-        await _send_or_edit_match(bot, chat_id=chat_id, source_message=source_message, match=match)
+        await _send_or_edit_match(bot, chat_id=chat_id, source_message=source_message, view=view)
     except Exception:
         logger.exception("Failed to send tournament match")
         await bot.send_message(

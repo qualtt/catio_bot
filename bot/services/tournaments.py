@@ -66,6 +66,13 @@ class TournamentVoteSubmission:
     tournament_id: int | None = None
 
 
+@dataclass(frozen=True)
+class TournamentMatchView:
+    match: PhotoTournamentMatch
+    left_entry: PhotoTournamentEntry
+    right_entry: PhotoTournamentEntry
+
+
 def tournament_type_label(tournament_type: str) -> str:
     if tournament_type == TOURNAMENT_MONTHLY:
         return bot_content.message("tournament_monthly_label")
@@ -76,6 +83,12 @@ def tournament_period_label(tournament: PhotoTournament) -> str:
     start = ensure_app_timezone(tournament.period_start).strftime("%Y-%m-%d")
     end = ensure_app_timezone(tournament.period_end - timedelta(seconds=1)).strftime("%Y-%m-%d")
     return f"{start} - {end}"
+
+
+def tournament_voting_deadline_label(tournament: PhotoTournament) -> str:
+    if tournament.voting_ends_at is None:
+        return "?"
+    return ensure_app_timezone(tournament.voting_ends_at).strftime("%d.%m.%Y %H:%M")
 
 
 def last_completed_week_period(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -94,6 +107,15 @@ def weekly_notification_time(period_end: datetime) -> datetime:
 
 def round_duration() -> timedelta:
     return timedelta(hours=max(config.PHOTO_TOURNAMENT_ROUND_HOURS, 1))
+
+
+def _bracket_round_count(entry_count: int) -> int:
+    rounds = 0
+    remaining = entry_count
+    while remaining > 1:
+        remaining = (remaining + 1) // 2
+        rounds += 1
+    return rounds
 
 
 async def collect_weekly_source_photos(
@@ -166,30 +188,49 @@ async def _get_tournament_by_period(
     )
 
 
-async def _create_round(
+def _voting_is_open(tournament: PhotoTournament, *, now: datetime | None = None) -> bool:
+    if tournament.voting_ends_at is None:
+        return False
+    current = ensure_app_timezone(now or now_in_app_tz())
+    voting_ends = ensure_app_timezone(tournament.voting_ends_at)
+    return voting_ends > current
+
+
+async def _create_full_bracket(
     session: AsyncSession,
     tournament: PhotoTournament,
     entries: list[PhotoTournamentEntry],
     *,
-    round_number: int,
     now: datetime,
-) -> PhotoTournamentRound:
-    round_item = PhotoTournamentRound(
-        tournament_id=tournament.id,
-        round_number=round_number,
-        status=ROUND_OPEN,
-        started_at=now,
-        ends_at=now + round_duration(),
-    )
-    session.add(round_item)
+) -> None:
+    voting_ends = now + round_duration()
+    tournament.status = TOURNAMENT_RUNNING
+    tournament.started_at = tournament.started_at or now
+    tournament.voting_ends_at = voting_ends
+    round_count = _bracket_round_count(len(entries))
+    tournament.current_round_number = round_count
+
+    round_items: list[PhotoTournamentRound] = []
+    for round_number in range(1, round_count + 1):
+        round_item = PhotoTournamentRound(
+            tournament_id=tournament.id,
+            round_number=round_number,
+            status=ROUND_OPEN,
+            started_at=now,
+            ends_at=voting_ends,
+        )
+        session.add(round_item)
+        round_items.append(round_item)
     await session.flush()
 
+    first_round = round_items[0]
+    current_round_matches: list[PhotoTournamentMatch] = []
     for match_index, entry_index in enumerate(range(0, len(entries), 2), start=1):
         left_entry = entries[entry_index]
         right_entry = entries[entry_index + 1] if entry_index + 1 < len(entries) else None
         match = PhotoTournamentMatch(
             tournament_id=tournament.id,
-            round_id=round_item.id,
+            round_id=first_round.id,
             match_number=match_index,
             left_entry_id=left_entry.id,
             right_entry_id=right_entry.id if right_entry else None,
@@ -197,11 +238,31 @@ async def _create_round(
             status=MATCH_BYE if right_entry is None else MATCH_OPEN,
         )
         session.add(match)
+        current_round_matches.append(match)
+    await session.flush()
 
-    tournament.status = TOURNAMENT_RUNNING
-    tournament.current_round_number = round_number
-    tournament.started_at = tournament.started_at or now
-    return round_item
+    for round_number in range(2, round_count + 1):
+        round_item = round_items[round_number - 1]
+        next_round_matches: list[PhotoTournamentMatch] = []
+        for match_index in range(0, len(current_round_matches), 2):
+            left_feeder = current_round_matches[match_index]
+            right_feeder = (
+                current_round_matches[match_index + 1]
+                if match_index + 1 < len(current_round_matches)
+                else None
+            )
+            match = PhotoTournamentMatch(
+                tournament_id=tournament.id,
+                round_id=round_item.id,
+                match_number=match_index // 2 + 1,
+                feeder_left_match_id=left_feeder.id,
+                feeder_right_match_id=right_feeder.id if right_feeder else None,
+                status=MATCH_OPEN,
+            )
+            session.add(match)
+            next_round_matches.append(match)
+        await session.flush()
+        current_round_matches = next_round_matches
 
 
 async def create_weekly_tournament_if_due(
@@ -266,87 +327,214 @@ async def create_weekly_tournament_if_due(
         session.add(entry)
         entries.append(entry)
     await session.flush()
-    await _create_round(session, tournament, entries, round_number=1, now=current)
+    await _create_full_bracket(session, tournament, entries, now=current)
     await session.commit()
     await session.refresh(tournament)
     return tournament
 
 
-def _match_winner(match: PhotoTournamentMatch) -> PhotoTournamentEntry:
-    if match.right_entry is None:
-        return match.left_entry
-    if match.left_votes > match.right_votes:
-        return match.left_entry
-    if match.right_votes > match.left_votes:
-        return match.right_entry
+def _entry_pair_winner(
+    left_entry: PhotoTournamentEntry,
+    right_entry: PhotoTournamentEntry | None,
+    *,
+    left_votes: int,
+    right_votes: int,
+) -> PhotoTournamentEntry:
+    if right_entry is None:
+        return left_entry
+    if left_votes > right_votes:
+        return left_entry
+    if right_votes > left_votes:
+        return right_entry
     return min(
-        (match.left_entry, match.right_entry),
+        (left_entry, right_entry),
         key=lambda entry: (entry.seed, entry.id),
     )
 
 
-async def close_due_rounds(session: AsyncSession, *, now: datetime | None = None) -> int:
-    current = ensure_app_timezone(now or now_in_app_tz())
-    stmt = (
-        select(PhotoTournamentRound)
-        .options(
-            selectinload(PhotoTournamentRound.tournament),
-            selectinload(PhotoTournamentRound.matches).selectinload(PhotoTournamentMatch.left_entry),
-            selectinload(PhotoTournamentRound.matches).selectinload(PhotoTournamentMatch.right_entry),
-        )
-        .where(
-            PhotoTournamentRound.status == ROUND_OPEN,
-            PhotoTournamentRound.ends_at <= current,
-        )
-        .order_by(PhotoTournamentRound.ends_at.asc(), PhotoTournamentRound.id.asc())
+def _match_winner(match: PhotoTournamentMatch) -> PhotoTournamentEntry:
+    if match.right_entry is None:
+        return match.left_entry
+    return _entry_pair_winner(
+        match.left_entry,
+        match.right_entry,
+        left_votes=match.left_votes,
+        right_votes=match.right_votes,
     )
-    rounds = list((await session.execute(stmt)).scalars())
-    closed_count = 0
+
+
+async def _vote_counts_for_match(
+    session: AsyncSession,
+    *,
+    match_id: int,
+    left_entry_id: int,
+    right_entry_id: int,
+) -> tuple[int, int]:
+    rows = (
+        await session.execute(
+            select(PhotoTournamentVote.chosen_entry_id, func.count())
+            .where(
+                PhotoTournamentVote.match_id == match_id,
+                PhotoTournamentVote.chosen_entry_id.in_((left_entry_id, right_entry_id)),
+            )
+            .group_by(PhotoTournamentVote.chosen_entry_id)
+        )
+    ).all()
+    counts = {entry_id: count for entry_id, count in rows}
+    return counts.get(left_entry_id, 0), counts.get(right_entry_id, 0)
+
+
+async def _favorite_photo_id(
+    session: AsyncSession,
+    *,
+    final_round_id: int,
+) -> int | None:
+    row = (
+        await session.execute(
+            select(PhotoTournamentEntry.photo_id, func.count())
+            .join(PhotoTournamentVote, PhotoTournamentVote.chosen_entry_id == PhotoTournamentEntry.id)
+            .join(PhotoTournamentMatch, PhotoTournamentMatch.id == PhotoTournamentVote.match_id)
+            .where(PhotoTournamentMatch.round_id == final_round_id)
+            .group_by(PhotoTournamentEntry.photo_id)
+            .order_by(func.count().desc(), PhotoTournamentEntry.photo_id.asc())
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None
+    return row[0]
+
+
+async def _close_tournament(
+    session: AsyncSession,
+    tournament: PhotoTournament,
+    *,
+    now: datetime,
+) -> None:
+    rounds = list(
+        (
+            await session.execute(
+                select(PhotoTournamentRound)
+                .options(
+                    selectinload(PhotoTournamentRound.matches).selectinload(PhotoTournamentMatch.left_entry),
+                    selectinload(PhotoTournamentRound.matches).selectinload(PhotoTournamentMatch.right_entry),
+                )
+                .where(PhotoTournamentRound.tournament_id == tournament.id)
+                .order_by(PhotoTournamentRound.round_number.asc())
+            )
+        ).scalars()
+    )
+    match_by_id: dict[int, PhotoTournamentMatch] = {}
+    for round_item in rounds:
+        for match in round_item.matches:
+            match_by_id[match.id] = match
+
+    final_match: PhotoTournamentMatch | None = None
 
     for round_item in rounds:
-        tournament = round_item.tournament
-        if tournament.status != TOURNAMENT_RUNNING:
-            continue
-
-        winners: list[PhotoTournamentEntry] = []
         for match in sorted(round_item.matches, key=lambda item: item.match_number):
-            if match.status not in (MATCH_OPEN, MATCH_BYE):
+            if match.winner_entry_id is not None:
                 continue
-            winner = _match_winner(match)
-            match.winner_entry_id = winner.id
-            match.status = MATCH_CLOSED
-            match.closed_at = current
-            winners.append(winner)
 
-            loser = match.right_entry if winner.id == match.left_entry_id else match.left_entry
-            if loser is not None and loser.id != winner.id:
-                loser.status = ENTRY_ELIMINATED
+            if match.feeder_left_match_id is None:
+                if match.status == MATCH_BYE:
+                    winner = match.left_entry
+                else:
+                    winner = _match_winner(match)
+                match.winner_entry_id = winner.id
+                match.status = MATCH_CLOSED
+                match.closed_at = now
+                loser = match.right_entry
+                if loser is not None and loser.id != winner.id:
+                    loser.status = ENTRY_ELIMINATED
+                if round_item.round_number == rounds[-1].round_number:
+                    final_match = match
+                continue
+
+            left_feeder = match_by_id[match.feeder_left_match_id]
+            right_feeder = (
+                match_by_id[match.feeder_right_match_id]
+                if match.feeder_right_match_id is not None
+                else None
+            )
+            left_entry = await session.get(PhotoTournamentEntry, left_feeder.winner_entry_id)
+            right_entry = (
+                await session.get(PhotoTournamentEntry, right_feeder.winner_entry_id)
+                if right_feeder is not None and right_feeder.winner_entry_id is not None
+                else None
+            )
+            match.left_entry_id = left_entry.id if left_entry is not None else None
+            match.right_entry_id = right_entry.id if right_entry is not None else None
+
+            if right_entry is None:
+                winner = left_entry
+                match.winner_entry_id = winner.id if winner is not None else None
+                match.status = MATCH_BYE if winner is not None else MATCH_CLOSED
+            else:
+                left_votes, right_votes = await _vote_counts_for_match(
+                    session,
+                    match_id=match.id,
+                    left_entry_id=left_entry.id,
+                    right_entry_id=right_entry.id,
+                )
+                match.left_votes = left_votes
+                match.right_votes = right_votes
+                winner = _entry_pair_winner(
+                    left_entry,
+                    right_entry,
+                    left_votes=left_votes,
+                    right_votes=right_votes,
+                )
+                match.winner_entry_id = winner.id
+                match.status = MATCH_CLOSED
+                loser = right_entry if winner.id == left_entry.id else left_entry
+                if loser.id != winner.id:
+                    loser.status = ENTRY_ELIMINATED
+
+            match.closed_at = now
+            final_match = match
 
         round_item.status = ROUND_CLOSED
-        round_item.closed_at = current
-        closed_count += 1
+        round_item.closed_at = now
 
-        if len(winners) <= 1:
-            winner = winners[0] if winners else None
-            if winner:
-                winner.status = ENTRY_WINNER
-                tournament.winner_photo_id = winner.photo_id
-            tournament.status = TOURNAMENT_COMPLETED
-            tournament.completed_at = current
-            continue
+    if final_match is None or final_match.winner_entry_id is None:
+        tournament.status = TOURNAMENT_CANCELLED
+        tournament.completed_at = now
+        return
 
-        winners.sort(key=lambda entry: (entry.seed, entry.id))
-        await _create_round(
-            session,
-            tournament,
-            winners,
-            round_number=round_item.round_number + 1,
-            now=current,
-        )
+    winner_entry = await session.get(PhotoTournamentEntry, final_match.winner_entry_id)
+    if winner_entry is not None:
+        winner_entry.status = ENTRY_WINNER
+        tournament.winner_photo_id = winner_entry.photo_id
 
-    if closed_count:
+    tournament.favorite_photo_id = await _favorite_photo_id(session, final_round_id=rounds[-1].id)
+    tournament.status = TOURNAMENT_COMPLETED
+    tournament.completed_at = now
+
+
+async def close_due_tournaments(session: AsyncSession, *, now: datetime | None = None) -> int:
+    current = ensure_app_timezone(now or now_in_app_tz())
+    tournaments = list(
+        (
+            await session.execute(
+                select(PhotoTournament).where(
+                    PhotoTournament.status == TOURNAMENT_RUNNING,
+                    PhotoTournament.voting_ends_at.is_not(None),
+                )
+                .order_by(PhotoTournament.voting_ends_at.asc(), PhotoTournament.id.asc())
+            )
+        ).scalars()
+    )
+    closed_tournaments = [
+        tournament
+        for tournament in tournaments
+        if ensure_app_timezone(tournament.voting_ends_at) <= current
+    ]
+    for tournament in closed_tournaments:
+        await _close_tournament(session, tournament, now=current)
+    if closed_tournaments:
         await session.commit()
-    return closed_count
+    return len(closed_tournaments)
 
 
 async def _used_weekly_tournament_ids(session: AsyncSession) -> set[int]:
@@ -465,7 +653,7 @@ async def create_monthly_tournament_if_due(
         return tournament
 
     await session.flush()
-    await _create_round(session, tournament, entries, round_number=1, now=current)
+    await _create_full_bracket(session, tournament, entries, now=current)
     await session.commit()
     await session.refresh(tournament)
     return tournament
@@ -511,6 +699,7 @@ async def send_tournament_notifications(
                     message_key,
                     period=tournament_period_label(tournament),
                     count=entry_count,
+                    voting_deadline=tournament_voting_deadline_label(tournament),
                 ),
                 reply_markup=get_tournament_start_kb(tournament.id),
             )
@@ -541,9 +730,9 @@ async def run_tournament_maintenance(bot: Bot) -> None:
 
     async with async_session() as session:
         await create_weekly_tournament_if_due(session)
-        closed_count = await close_due_rounds(session)
+        closed_count = await close_due_tournaments(session)
         if closed_count:
-            logger.info("Closed %s photo tournament rounds", closed_count)
+            logger.info("Closed %s photo tournaments", closed_count)
         await create_monthly_tournament_if_due(session)
 
         tournaments_to_notify = list(
@@ -577,12 +766,65 @@ async def get_current_tournament(session: AsyncSession) -> PhotoTournament | Non
     )
 
 
+async def _user_match_choice_entry(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    match: PhotoTournamentMatch,
+) -> PhotoTournamentEntry | None:
+    if match.status == MATCH_BYE:
+        return match.left_entry
+    if match.winner_entry_id is not None:
+        return match.winner_entry
+    chosen_entry_id = await session.scalar(
+        select(PhotoTournamentVote.chosen_entry_id).where(
+            PhotoTournamentVote.match_id == match.id,
+            PhotoTournamentVote.user_id == user_id,
+        )
+    )
+    if chosen_entry_id is None:
+        return None
+    return await session.get(PhotoTournamentEntry, chosen_entry_id)
+
+
+async def resolve_user_match_view(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    match: PhotoTournamentMatch,
+) -> TournamentMatchView | None:
+    if match.feeder_left_match_id is None:
+        if match.left_entry is None or match.right_entry is None:
+            return None
+        return TournamentMatchView(match=match, left_entry=match.left_entry, right_entry=match.right_entry)
+
+    left_feeder = await session.get(PhotoTournamentMatch, match.feeder_left_match_id)
+    if left_feeder is None:
+        return None
+    left_entry = await _user_match_choice_entry(session, user_id=user_id, match=left_feeder)
+    if left_entry is None:
+        return None
+
+    if match.feeder_right_match_id is None:
+        return None
+
+    right_feeder = await session.get(PhotoTournamentMatch, match.feeder_right_match_id)
+    if right_feeder is None:
+        return None
+    right_entry = await _user_match_choice_entry(session, user_id=user_id, match=right_feeder)
+    if right_entry is None:
+        return None
+
+    return TournamentMatchView(match=match, left_entry=left_entry, right_entry=right_entry)
+
+
 async def get_next_open_match_for_user(
     session: AsyncSession,
     *,
     user_id: int,
     tournament_id: int | None = None,
-) -> PhotoTournamentMatch | None:
+) -> TournamentMatchView | None:
+    current = now_in_app_tz()
     user_vote_exists = exists().where(
         PhotoTournamentVote.match_id == PhotoTournamentMatch.id,
         PhotoTournamentVote.user_id == user_id,
@@ -599,9 +841,8 @@ async def get_next_open_match_for_user(
         )
         .where(
             PhotoTournament.status == TOURNAMENT_RUNNING,
-            PhotoTournamentRound.status == ROUND_OPEN,
+            PhotoTournament.voting_ends_at.is_not(None),
             PhotoTournamentMatch.status == MATCH_OPEN,
-            PhotoTournamentMatch.right_entry_id.is_not(None),
             ~user_vote_exists,
         )
         .order_by(
@@ -610,11 +851,20 @@ async def get_next_open_match_for_user(
             PhotoTournamentRound.round_number.asc(),
             PhotoTournamentMatch.match_number.asc(),
         )
-        .limit(1)
     )
     if tournament_id is not None:
         stmt = stmt.where(PhotoTournamentMatch.tournament_id == tournament_id)
-    return await session.scalar(stmt)
+
+    for match in (await session.execute(stmt)).scalars():
+        if match.feeder_left_match_id is None and match.right_entry_id is None:
+            continue
+        tournament = match.tournament
+        if tournament is None or not _voting_is_open(tournament, now=current):
+            continue
+        view = await resolve_user_match_view(session, user_id=user_id, match=match)
+        if view is not None:
+            return view
+    return None
 
 
 async def submit_tournament_vote(
@@ -627,18 +877,22 @@ async def submit_tournament_vote(
     match = await session.scalar(
         select(PhotoTournamentMatch)
         .options(
+            selectinload(PhotoTournamentMatch.tournament),
             selectinload(PhotoTournamentMatch.left_entry),
             selectinload(PhotoTournamentMatch.right_entry),
         )
         .where(PhotoTournamentMatch.id == match_id)
         .with_for_update()
     )
-    if (
-        match is None
-        or match.status != MATCH_OPEN
-        or match.right_entry_id is None
-        or chosen_entry_id not in {match.left_entry_id, match.right_entry_id}
-    ):
+    if match is None or match.status != MATCH_OPEN:
+        return TournamentVoteSubmission(accepted=False, created=False)
+
+    tournament = match.tournament
+    if tournament is None or tournament.status != TOURNAMENT_RUNNING or not _voting_is_open(tournament):
+        return TournamentVoteSubmission(accepted=False, created=False)
+
+    view = await resolve_user_match_view(session, user_id=user_id, match=match)
+    if view is None or chosen_entry_id not in {view.left_entry.id, view.right_entry.id}:
         return TournamentVoteSubmission(accepted=False, created=False)
 
     existing = await session.scalar(
@@ -661,10 +915,11 @@ async def submit_tournament_vote(
         chosen_entry_id=chosen_entry_id,
     )
     session.add(vote)
-    if chosen_entry_id == match.left_entry_id:
-        match.left_votes += 1
-    else:
-        match.right_votes += 1
+    if match.feeder_left_match_id is None:
+        if chosen_entry_id == view.left_entry.id:
+            match.left_votes += 1
+        else:
+            match.right_votes += 1
 
     try:
         await session.commit()
@@ -718,11 +973,9 @@ def _compose_match_image(left_data: bytes, right_data: bytes) -> bytes:
     return output.getvalue()
 
 
-async def tournament_match_photo_input(match: PhotoTournamentMatch) -> BufferedInputFile:
-    if match.right_entry is None:
-        raise ValueError("Tournament match has no right entry")
-    left_photo = match.left_entry.photo
-    right_photo = match.right_entry.photo
+async def tournament_match_photo_input(view: TournamentMatchView) -> BufferedInputFile:
+    left_photo = view.left_entry.photo
+    right_photo = view.right_entry.photo
     left_data = await download_photo(
         storage_bucket=left_photo.storage_bucket,
         storage_key=left_photo.storage_key,
@@ -731,4 +984,7 @@ async def tournament_match_photo_input(match: PhotoTournamentMatch) -> BufferedI
         storage_bucket=right_photo.storage_bucket,
         storage_key=right_photo.storage_key,
     )
-    return BufferedInputFile(_compose_match_image(left_data, right_data), filename=f"tournament-{match.id}.jpg")
+    return BufferedInputFile(
+        _compose_match_image(left_data, right_data),
+        filename=f"tournament-{view.match.id}.jpg",
+    )

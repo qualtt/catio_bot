@@ -49,12 +49,15 @@ class PhotoTournament(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=TOURNAMENT_DRAFT, index=True)
     current_round_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     winner_photo_id: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), nullable=True)
+    favorite_photo_id: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), nullable=True)
+    voting_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    winner_photo = relationship("Photo")
+    winner_photo = relationship("Photo", foreign_keys=[winner_photo_id])
+    favorite_photo = relationship("Photo", foreign_keys=[favorite_photo_id])
     entries: Mapped[list["PhotoTournamentEntry"]] = relationship(
         back_populates="tournament",
         foreign_keys="PhotoTournamentEntry.tournament_id",
@@ -133,7 +136,15 @@ class PhotoTournamentMatch(Base):
     tournament_id: Mapped[int] = mapped_column(ForeignKey("photo_tournaments.id"), nullable=False)
     round_id: Mapped[int] = mapped_column(ForeignKey("photo_tournament_rounds.id"), nullable=False)
     match_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    left_entry_id: Mapped[int] = mapped_column(ForeignKey("photo_tournament_entries.id"), nullable=False)
+    feeder_left_match_id: Mapped[int | None] = mapped_column(
+        ForeignKey("photo_tournament_matches.id"),
+        nullable=True,
+    )
+    feeder_right_match_id: Mapped[int | None] = mapped_column(
+        ForeignKey("photo_tournament_matches.id"),
+        nullable=True,
+    )
+    left_entry_id: Mapped[int | None] = mapped_column(ForeignKey("photo_tournament_entries.id"), nullable=True)
     right_entry_id: Mapped[int | None] = mapped_column(ForeignKey("photo_tournament_entries.id"), nullable=True)
     winner_entry_id: Mapped[int | None] = mapped_column(ForeignKey("photo_tournament_entries.id"), nullable=True)
     left_votes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -143,6 +154,14 @@ class PhotoTournamentMatch(Base):
 
     tournament: Mapped["PhotoTournament"] = relationship()
     round: Mapped["PhotoTournamentRound"] = relationship(back_populates="matches")
+    feeder_left_match: Mapped["PhotoTournamentMatch | None"] = relationship(
+        foreign_keys=[feeder_left_match_id],
+        remote_side="PhotoTournamentMatch.id",
+    )
+    feeder_right_match: Mapped["PhotoTournamentMatch | None"] = relationship(
+        foreign_keys=[feeder_right_match_id],
+        remote_side="PhotoTournamentMatch.id",
+    )
     left_entry: Mapped["PhotoTournamentEntry"] = relationship(foreign_keys=[left_entry_id])
     right_entry: Mapped["PhotoTournamentEntry | None"] = relationship(foreign_keys=[right_entry_id])
     winner_entry: Mapped["PhotoTournamentEntry | None"] = relationship(foreign_keys=[winner_entry_id])
