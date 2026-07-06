@@ -16,6 +16,7 @@ from bot.keyboards.inline import (
     get_admin_album_view_kb,
     get_admin_animal_change_kb,
     get_admin_approval_kb,
+    get_admin_broadcast_confirm_kb,
     get_admin_custom_animal_kb,
     get_admin_menu_kb,
     get_admin_post_manage_kb,
@@ -23,6 +24,7 @@ from bot.keyboards.inline import (
     get_admin_reschedule_cancel_kb,
     get_admin_schedule_kb,
 )
+from bot.services.broadcast import BROADCAST_MESSAGE_LIMIT, broadcast_message
 from bot.services.captions import admin_album_control_text, admin_album_view_caption, format_schedule, submission_caption
 from bot.services.publisher import publish_post
 from bot.services.scoring import award_post_approval_score
@@ -46,10 +48,16 @@ class AdminState(StatesGroup):
     waiting_for_reschedule_time = State()
     waiting_for_rejection_reason = State()
     waiting_for_custom_animal_type = State()
+    waiting_for_broadcast_text = State()
+    waiting_for_broadcast_confirm = State()
+
+
+def is_admin_user(user_id: int) -> bool:
+    return user_id == config.ADMIN_ID
 
 
 def is_admin(callback: CallbackQuery) -> bool:
-    return callback.from_user.id == config.ADMIN_ID
+    return is_admin_user(callback.from_user.id)
 
 
 def post_author(post: Post) -> str:
@@ -460,12 +468,98 @@ async def admin_schedule_command(message: Message):
 
 @admin_router.message(Command("stats"))
 async def admin_stats_command(message: Message):
-    if message.from_user.id != config.ADMIN_ID:
+    if not is_admin_user(message.from_user.id):
         await message.answer(bot_content.message("not_admin"))
         return
     async with async_session() as session:
         text = await load_admin_stats(session)
     await message.answer(text, reply_markup=get_admin_menu_kb())
+
+
+async def _start_broadcast_prompt(target: Message, state: FSMContext) -> None:
+    await state.set_state(AdminState.waiting_for_broadcast_text)
+    await state.set_data({})
+    await target.answer(
+        bot_content.message("admin_broadcast_prompt"),
+        reply_markup=get_admin_menu_kb(),
+    )
+
+
+@admin_router.message(Command("broadcast"))
+async def admin_broadcast_command(message: Message, state: FSMContext):
+    if not is_admin_user(message.from_user.id):
+        await message.answer(bot_content.message("not_admin"))
+        return
+    await _start_broadcast_prompt(message, state)
+
+
+@admin_router.callback_query(F.data == "admin_broadcast")
+async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+    await _start_broadcast_prompt(callback.message, state)
+    await callback.answer()
+
+
+@admin_router.message(AdminState.waiting_for_broadcast_text)
+@admin_router.message(AdminState.waiting_for_broadcast_confirm)
+async def handle_admin_broadcast_text(message: Message, state: FSMContext):
+    if not is_admin_user(message.from_user.id):
+        await message.answer(bot_content.message("not_admin"))
+        return
+
+    text = (message.text or message.caption or "").strip()
+    if not text:
+        await message.answer(bot_content.message("admin_broadcast_empty"))
+        return
+    if len(text) > BROADCAST_MESSAGE_LIMIT:
+        await message.answer(
+            bot_content.message("admin_broadcast_too_long", max_length=BROADCAST_MESSAGE_LIMIT)
+        )
+        return
+
+    await state.set_state(AdminState.waiting_for_broadcast_confirm)
+    await state.update_data(broadcast_text=text)
+    await message.answer(
+        bot_content.message("admin_broadcast_preview", preview=text),
+        reply_markup=get_admin_broadcast_confirm_kb(),
+    )
+
+
+@admin_router.callback_query(F.data == "admin_broadcast_cancel")
+async def handle_admin_broadcast_cancel(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+    await state.clear()
+    await callback.message.edit_text(bot_content.message("admin_broadcast_cancelled"))
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data == "admin_broadcast_send")
+async def handle_admin_broadcast_send(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+
+    data = await state.get_data()
+    text = (data.get("broadcast_text") or "").strip()
+    if not text:
+        await state.clear()
+        await callback.answer(bot_content.message("admin_broadcast_empty"), show_alert=True)
+        return
+
+    await callback.answer()
+    await callback.message.edit_text(bot_content.message("admin_broadcast_prompt"))
+
+    sent_count, failed_count = await broadcast_message(bot, text)
+    await state.clear()
+    await bot.send_message(
+        chat_id=callback.from_user.id,
+        text=bot_content.message("admin_broadcast_done", sent=sent_count, failed=failed_count),
+        reply_markup=get_admin_menu_kb(),
+    )
 
 
 @admin_router.callback_query(F.data == "admin_stats")
