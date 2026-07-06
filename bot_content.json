@@ -70,8 +70,8 @@
     "identification_batch_done": "Подтвердить пачку",
     "identification_batch_reject": "Отклонить пачку",
     "tournament_vote": "Голосовать",
-    "tournament_pick_left": "1",
-    "tournament_pick_right": "2",
+    "tournament_pick_left": "↑",
+    "tournament_pick_right": "↑",
     "tournament_refresh": "Обновить"
   },
   "messages": {
@@ -147,7 +147,7 @@
     "admin_menu": "Админ-панель",
     "admin_schedule_header": "Запланировано на {date}: {count}\n\n{posts}",
     "admin_schedule_empty": "На {date} публикаций нет.",
-    "admin_schedule_line": "#{post_id} · {time} · {animal_type} · {author}",
+    "admin_schedule_line": "#{post_id} · {time} · {animal_type} · {photo_ref} · {author}",
     "admin_post_manage": "Публикация #{post_id}\nВид: {animal_type}\nСтатус: {status}\nВремя: {schedule}\nАвтор: {author}",
     "admin_stats_text": "Статистика\n\nНа модерации: {pending}\nЗапланировано: {approved}\nОтклонено: {rejected}\nОпубликовано: {published}\n\nСегодня запланировано: {today_scheduled}\nПросрочено к публикации: {overdue}\nСледующая публикация: {next_schedule}\n\nВиды животных:\n{animal_stats}",
     "admin_stats_animal_line": "{animal_type}: {count}",

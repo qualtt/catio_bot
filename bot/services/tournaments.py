@@ -8,7 +8,7 @@ from datetime import datetime, time, timedelta
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import BufferedInputFile
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageOps
 from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -991,19 +991,14 @@ def _compose_match_image(left_data: bytes, right_data: bytes) -> bytes:
     panel_size = (560, 760)
     gap = 24
     margin = 28
-    label_height = 44
-    canvas_size = (panel_size[0] * 2 + gap + margin * 2, panel_size[1] + label_height + margin * 2)
+    canvas_size = (panel_size[0] * 2 + gap + margin * 2, panel_size[1] + margin * 2)
     canvas = Image.new("RGB", canvas_size, "#202124")
-    draw = ImageDraw.Draw(canvas)
 
     positions = [
-        (margin, margin + label_height),
-        (margin + panel_size[0] + gap, margin + label_height),
+        (margin, margin),
+        (margin + panel_size[0] + gap, margin),
     ]
-    for label, data, position in (("1", left_data, positions[0]), ("2", right_data, positions[1])):
-        label_box = (position[0], margin, position[0] + panel_size[0], margin + label_height - 8)
-        draw.rounded_rectangle(label_box, radius=8, fill="#ffffff")
-        draw.text((label_box[0] + 16, label_box[1] + 10), label, fill="#111111")
+    for data, position in ((left_data, positions[0]), (right_data, positions[1])):
         canvas.paste(_fit_photo_panel(data, size=panel_size), position)
 
     output = io.BytesIO()

@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -48,6 +49,21 @@ class FakeBot:
 
     async def edit_message_caption(self, **kwargs):
         self.edited_captions.append(kwargs)
+
+
+def test_admin_schedule_text_includes_photo_command_and_author():
+    post = SimpleNamespace(
+        id=17,
+        photo_id=88,
+        animal_type="кот",
+        schedule_time=datetime(2026, 7, 6, 18, 30),
+        user=SimpleNamespace(username="user", telegram_id=1001),
+    )
+
+    text = admin.admin_schedule_text(date(2026, 7, 6), [post])
+
+    assert "/photo_88" in text
+    assert "@user" in text
 
 
 @pytest.mark.asyncio

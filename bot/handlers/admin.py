@@ -101,12 +101,14 @@ def admin_schedule_text(target_date: date, posts: list[Post]) -> str:
 
     lines = []
     for post in posts:
+        photo_ref = f"/photo_{post.photo_id}" if post.photo_id else bot_content.message("author_unknown")
         lines.append(
             bot_content.message(
                 "admin_schedule_line",
                 post_id=post.id,
                 time=format_schedule(post.schedule_time)[11:16],
                 animal_type=post.animal_type,
+                photo_ref=photo_ref,
                 author=post_author(post),
             )
         )
