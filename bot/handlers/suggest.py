@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
+from aiogram.filters import BaseFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InputMediaPhoto, Message
@@ -62,6 +63,29 @@ class AlbumBuffer:
 
 _album_buffers: dict[tuple[int, str], AlbumBuffer] = {}
 _album_lock = asyncio.Lock()
+
+# Single-photo submissions keyed by the bot prompt message_id (not FSM — several can be active at once).
+_single_submissions: dict[int, dict] = {}
+# user_id -> prompt message_id while waiting for a custom animal type reply.
+_custom_animal_prompt_by_user: dict[int, int] = {}
+
+
+def _get_single_submission(message_id: int) -> dict | None:
+    return _single_submissions.get(message_id)
+
+
+def _set_single_submission(message_id: int, data: dict) -> None:
+    _single_submissions[message_id] = data
+
+
+def _finish_single_submission(message_id: int) -> dict | None:
+    submission = _single_submissions.pop(message_id, None)
+    if submission is None:
+        return None
+    user_id = submission.get("user_id")
+    if user_id is not None and _custom_animal_prompt_by_user.get(user_id) == message_id:
+        _custom_animal_prompt_by_user.pop(user_id, None)
+    return submission
 
 
 def user_display(user) -> str:
@@ -307,6 +331,15 @@ class SuggestState(StatesGroup):
     waiting_for_schedule_type = State()
 
 
+class WaitingSingleCustomAnimalFilter(BaseFilter):
+    async def __call__(self, message: Message) -> bool:
+        prompt_message_id = _custom_animal_prompt_by_user.get(message.from_user.id)
+        if prompt_message_id is None:
+            return False
+        single = _get_single_submission(prompt_message_id)
+        return single is not None and single.get("stage") == "custom_animal"
+
+
 async def _edit_callback_prompt(callback: CallbackQuery, text: str, reply_markup=None) -> None:
     if callback.message.photo:
         await callback.message.edit_caption(caption=text, reply_markup=reply_markup)
@@ -319,6 +352,66 @@ async def _edit_message_text_or_caption(message: Message, text: str, reply_marku
         await message.edit_caption(caption=text, reply_markup=reply_markup)
         return
     await message.edit_text(text, reply_markup=reply_markup)
+
+
+async def _edit_bot_message_text_or_caption(
+    bot: Bot,
+    *,
+    chat_id: int,
+    message_id: int,
+    text: str,
+    reply_markup=None,
+) -> None:
+    try:
+        await bot.edit_message_caption(
+            chat_id=chat_id,
+            message_id=message_id,
+            caption=text,
+            reply_markup=reply_markup,
+        )
+        return
+    except TelegramAPIError:
+        pass
+    await bot.edit_message_text(
+        chat_id=chat_id,
+        message_id=message_id,
+        text=text,
+        reply_markup=reply_markup,
+    )
+
+
+async def _select_single_animal_type(callback: CallbackQuery, animal_type: str) -> None:
+    message_id = callback.message.message_id
+    single = _get_single_submission(message_id)
+    if single is None:
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
+    single["animal_type"] = animal_type
+    single["stage"] = "schedule"
+    await _edit_callback_prompt(
+        callback,
+        bot_content.message("animal_type_selected", animal_type=animal_type),
+        reply_markup=get_schedule_choice_kb(),
+    )
+    await callback.answer()
+
+
+async def _ask_single_schedule(bot: Bot, *, chat_id: int, message_id: int, animal_type: str) -> None:
+    single = _get_single_submission(message_id)
+    if single is None:
+        return
+
+    single["animal_type"] = animal_type
+    single["stage"] = "schedule"
+    _custom_animal_prompt_by_user.pop(single.get("user_id"), None)
+    await _edit_bot_message_text_or_caption(
+        bot,
+        chat_id=chat_id,
+        message_id=message_id,
+        text=bot_content.message("animal_type_selected", animal_type=animal_type),
+        reply_markup=get_schedule_choice_kb(),
+    )
 
 
 async def _get_or_create_submission_user(message: Message):
@@ -801,18 +894,19 @@ async def _process_single_photo_message(message: Message, state: FSMContext, bot
         await message.answer(bot_content.message("photo_storage_failed"))
         return
 
-    await state.clear()
-    await state.update_data(
-        is_album=False,
-        file_id=file_id,
-        photo_id=item["photo_id"],
-        user_id=user.id,
-        duplicate_of_photo_id=item.get("duplicate_of_photo_id"),
-        duplicate_distance=item.get("duplicate_distance"),
+    submission_data = {
+        "file_id": file_id,
+        "photo_id": item["photo_id"],
+        "user_id": user.id,
+        "duplicate_of_photo_id": item.get("duplicate_of_photo_id"),
+        "duplicate_distance": item.get("duplicate_distance"),
+        "stage": "animal",
+    }
+    sent = await message.reply(
+        _single_photo_prompt_text(submission_data),
+        reply_markup=await get_animal_type_kb(),
     )
-    data = await state.get_data()
-    await state.set_state(SuggestState.waiting_for_animal_type)
-    await message.reply(_single_photo_prompt_text(data), reply_markup=await get_animal_type_kb())
+    _set_single_submission(sent.message_id, submission_data)
 
 
 async def _process_album_messages(messages: list[Message], state: FSMContext, bot: Bot) -> None:
@@ -892,56 +986,86 @@ async def handle_photo(message: Message, state: FSMContext, bot: Bot):
     await _process_single_photo_message(message, state, bot)
 
 
-async def ask_for_schedule(message: Message, state: FSMContext, animal_type: str):
-    await state.update_data(animal_type=animal_type)
-    await state.set_state(SuggestState.waiting_for_schedule_type)
-    await message.answer(
-        bot_content.message("animal_type_selected", animal_type=animal_type),
-        reply_markup=get_schedule_choice_kb(),
-    )
-
-
 async def select_animal_type(callback: CallbackQuery, state: FSMContext, bot: Bot, animal_type: str):
+    if _get_single_submission(callback.message.message_id) is not None:
+        await _select_single_animal_type(callback, animal_type)
+        return
+
     data = await state.get_data()
     if _is_album_submission(data):
         await _handle_album_animal_selected(callback, state, bot, animal_type)
         return
 
-    await state.update_data(animal_type=animal_type)
-    await state.set_state(SuggestState.waiting_for_schedule_type)
-    await _edit_callback_prompt(
-        callback,
-        bot_content.message("animal_type_selected", animal_type=animal_type),
-        reply_markup=get_schedule_choice_kb(),
-    )
-    await callback.answer()
+    await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data == "animal_other")
+@suggest_router.callback_query(F.data == "animal_other")
 async def handle_other_animal_type(callback: CallbackQuery, state: FSMContext):
+    single = _get_single_submission(callback.message.message_id)
+    if single is not None:
+        single["stage"] = "animal_other"
+        await _edit_callback_prompt(
+            callback,
+            bot_content.message("choose_other_animal_type"),
+            reply_markup=await get_other_animal_type_kb(with_album_nav=False),
+        )
+        await callback.answer()
+        return
+
     data = await state.get_data()
+    if not _is_album_submission(data):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
     await _edit_callback_prompt(
         callback,
         bot_content.message("choose_other_animal_type"),
-        reply_markup=await get_other_animal_type_kb(with_album_nav=_is_album_submission(data)),
+        reply_markup=await get_other_animal_type_kb(with_album_nav=True),
     )
     await callback.answer()
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data == "animal_back")
+@suggest_router.callback_query(F.data == "animal_back")
 async def handle_animal_type_back(callback: CallbackQuery, state: FSMContext):
+    single = _get_single_submission(callback.message.message_id)
+    if single is not None:
+        single["stage"] = "animal"
+        await _edit_callback_prompt(
+            callback,
+            _single_photo_prompt_text(single),
+            reply_markup=await get_animal_type_kb(with_album_nav=False),
+        )
+        await callback.answer()
+        return
+
     data = await state.get_data()
-    text = _album_prompt_text(data) if _is_album_submission(data) else _single_photo_prompt_text(data)
+    if not _is_album_submission(data):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
     await _edit_callback_prompt(
         callback,
-        text,
-        reply_markup=await get_animal_type_kb(with_album_nav=_is_album_submission(data)),
+        _album_prompt_text(data),
+        reply_markup=await get_animal_type_kb(with_album_nav=True),
     )
     await callback.answer()
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data == "animal_custom")
+@suggest_router.callback_query(F.data == "animal_custom")
 async def handle_custom_animal_type_button(callback: CallbackQuery, state: FSMContext):
+    single = _get_single_submission(callback.message.message_id)
+    if single is not None:
+        single["stage"] = "custom_animal"
+        _custom_animal_prompt_by_user[callback.from_user.id] = callback.message.message_id
+        await _edit_callback_prompt(callback, bot_content.message("ask_custom_animal_type"))
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    if not _is_album_submission(data):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
     await state.set_state(SuggestState.waiting_for_custom_animal_type)
     await _edit_callback_prompt(callback, bot_content.message("ask_custom_animal_type"))
     await callback.answer()
@@ -967,7 +1091,7 @@ async def handle_album_animal_navigation(callback: CallbackQuery, state: FSMCont
     await callback.answer()
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data.startswith("animal_id_"))
+@suggest_router.callback_query(F.data.startswith("animal_id_"))
 async def handle_animal_type(callback: CallbackQuery, state: FSMContext, bot: Bot):
     try:
         animal_type_id = int(callback.data.rsplit("_", 1)[1])
@@ -984,7 +1108,7 @@ async def handle_animal_type(callback: CallbackQuery, state: FSMContext, bot: Bo
     await select_animal_type(callback, state, bot, animal_type)
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_animal_type, F.data.startswith("animal_extra_id_"))
+@suggest_router.callback_query(F.data.startswith("animal_extra_id_"))
 async def handle_extra_animal_type(callback: CallbackQuery, state: FSMContext, bot: Bot):
     try:
         animal_type_id = int(callback.data.rsplit("_", 1)[1])
@@ -1001,28 +1125,51 @@ async def handle_extra_animal_type(callback: CallbackQuery, state: FSMContext, b
     await select_animal_type(callback, state, bot, animal_type)
 
 
-@suggest_router.message(SuggestState.waiting_for_custom_animal_type)
-async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bot):
+async def _normalize_custom_animal_type_text(message: Message) -> str | None:
     max_length = bot_content.animal_type_max_length()
     if animal_type_has_unsupported_latin(message.text):
         await message.answer(bot_content.message("invalid_custom_animal_type_layout"))
-        return
+        return None
 
     async with async_session() as session:
         animal_type = await canonical_animal_type(session, message.text)
 
     if not animal_type:
         await message.answer(bot_content.message("invalid_custom_animal_type"))
-        return
+        return None
 
     if animal_type.casefold() == bot_content.other_animal_label().casefold():
         await message.answer(bot_content.message("invalid_custom_animal_type"))
-        return
+        return None
 
     if len(animal_type) > max_length:
         await message.answer(
             bot_content.message("custom_animal_type_too_long", max_length=max_length)
         )
+        return None
+
+    return animal_type
+
+
+@suggest_router.message(F.text, WaitingSingleCustomAnimalFilter())
+async def handle_single_custom_animal_type(message: Message, bot: Bot):
+    prompt_message_id = _custom_animal_prompt_by_user[message.from_user.id]
+    animal_type = await _normalize_custom_animal_type_text(message)
+    if animal_type is None:
+        return
+
+    await _ask_single_schedule(
+        bot,
+        chat_id=message.chat.id,
+        message_id=prompt_message_id,
+        animal_type=animal_type,
+    )
+
+
+@suggest_router.message(SuggestState.waiting_for_custom_animal_type)
+async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bot):
+    animal_type = await _normalize_custom_animal_type_text(message)
+    if animal_type is None:
         return
 
     data = await state.get_data()
@@ -1030,13 +1177,61 @@ async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bo
         await _handle_album_custom_animal_type(message, state, bot, animal_type)
         return
 
-    await ask_for_schedule(message, state, animal_type)
+    await state.clear()
+    await message.answer(bot_content.message("post_processed_or_missing"))
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data == "schedule_auto")
+@suggest_router.callback_query(F.data == "schedule_auto")
 async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    data = await state.get_data()
+    single = _get_single_submission(callback.message.message_id)
     author = user_display(callback.from_user)
+
+    if single is not None:
+        file_id = single.get("file_id")
+        photo_id = single.get("photo_id")
+        duplicate_of_photo_id = single.get("duplicate_of_photo_id")
+        duplicate_distance = single.get("duplicate_distance")
+        animal_type = single.get("animal_type")
+        user_id = single.get("user_id")
+
+        async with async_session() as session:
+            schedule_time = await get_next_auto_slot(session, animal_type=animal_type)
+            post = await create_post(
+                session,
+                user_id=user_id,
+                file_id=file_id,
+                animal_type=animal_type,
+                is_auto_scheduled=True,
+                manual_time=schedule_time,
+                photo_id=photo_id,
+                duplicate_of_photo_id=duplicate_of_photo_id,
+                duplicate_distance=duplicate_distance,
+            )
+            await session.refresh(post, ["duplicate_of_photo"])
+
+        _finish_single_submission(callback.message.message_id)
+        await _edit_message_text_or_caption(
+            callback.message,
+            bot_content.message(
+                "photo_submitted_auto",
+                schedule=_format_schedule(schedule_time),
+            ),
+        )
+        await _send_single_submission_to_admin(
+            bot,
+            post=post,
+            file_id=file_id,
+            animal_type=animal_type,
+            schedule_time=schedule_time,
+            author=author,
+        )
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    if not _is_album_submission(data):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
 
     if _is_album_submission(data):
         items = _album_items(data)
@@ -1061,52 +1256,25 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
         await callback.answer()
         return
 
-    file_id = data.get("file_id")
-    photo_id = data.get("photo_id")
-    duplicate_of_photo_id = data.get("duplicate_of_photo_id")
-    duplicate_distance = data.get("duplicate_distance")
-    animal_type = data.get("animal_type")
-    user_id = data.get("user_id")
 
-    async with async_session() as session:
-        schedule_time = await get_next_auto_slot(session, animal_type=animal_type)
-        post = await create_post(
-            session,
-            user_id=user_id,
-            file_id=file_id,
-            animal_type=animal_type,
-            is_auto_scheduled=True,
-            manual_time=schedule_time,
-            photo_id=photo_id,
-            duplicate_of_photo_id=duplicate_of_photo_id,
-            duplicate_distance=duplicate_distance,
-        )
-        await session.refresh(post, ["duplicate_of_photo"])
-
-    await state.clear()
-    await callback.message.edit_text(
-        bot_content.message(
-            "photo_submitted_auto",
-            schedule=_format_schedule(schedule_time),
-        )
-    )
-
-    await _send_single_submission_to_admin(
-        bot,
-        post=post,
-        file_id=file_id,
-        animal_type=animal_type,
-        schedule_time=schedule_time,
-        author=author,
-    )
-    await callback.answer()
-
-
-@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data == "schedule_manual")
+@suggest_router.callback_query(F.data == "schedule_manual")
 async def handle_schedule_manual(callback: CallbackQuery, state: FSMContext):
     today = now_in_app_tz().date()
     min_date = today + timedelta(days=1)
+
+    if _get_single_submission(callback.message.message_id) is not None:
+        await _edit_message_text_or_caption(
+            callback.message,
+            bot_content.message("choose_publication_date"),
+            reply_markup=await _build_calendar_markup({}, year=min_date.year, month=min_date.month),
+        )
+        await callback.answer()
+        return
+
     data = await state.get_data()
+    if not _is_album_submission(data):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
 
     if _is_album_submission(data):
         items, schedule_times, schedule_auto_flags, schedule_index = _album_schedule_context(data)
@@ -1123,14 +1291,8 @@ async def handle_schedule_manual(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    await callback.message.edit_text(
-        bot_content.message("choose_publication_date"),
-        reply_markup=await _build_calendar_markup(data, year=min_date.year, month=min_date.month),
-    )
-    await callback.answer()
 
-
-@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data.startswith("cal_nav_"))
+@suggest_router.callback_query(F.data.startswith("cal_nav_"))
 async def handle_calendar_nav(callback: CallbackQuery, state: FSMContext):
     _, _, year_raw, month_raw = callback.data.split("_")
     year = int(year_raw)
@@ -1143,14 +1305,19 @@ async def handle_calendar_nav(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    data = await state.get_data()
+    single = _get_single_submission(callback.message.message_id)
+    calendar_data = {} if single is not None else await state.get_data()
+    if single is None and not _is_album_submission(calendar_data):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
     await callback.message.edit_reply_markup(
-        reply_markup=await _build_calendar_markup(data, year=year, month=month)
+        reply_markup=await _build_calendar_markup(calendar_data, year=year, month=month)
     )
     await callback.answer()
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data.startswith("cal_day_"))
+@suggest_router.callback_query(F.data.startswith("cal_day_"))
 async def handle_calendar_day(callback: CallbackQuery, state: FSMContext):
     _, _, day_raw = callback.data.split("_")
     target_date = datetime.strptime(day_raw, "%Y-%m-%d").date()
@@ -1162,7 +1329,12 @@ async def handle_calendar_day(callback: CallbackQuery, state: FSMContext):
         await callback.answer(bot_content.message("no_free_slots"), show_alert=True)
         return
 
-    data = await state.get_data()
+    single = _get_single_submission(callback.message.message_id)
+    data = {} if single is not None else await state.get_data()
+    if single is None and not _is_album_submission(data):
+        await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+        return
+
     footer_buttons = None
     message_kwargs = {"date": target_date.strftime("%Y-%m-%d")}
     if _is_album_submission(data):
@@ -1189,19 +1361,20 @@ async def handle_calendar_day(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data.startswith("time_"))
+@suggest_router.callback_query(F.data.startswith("time_"))
 async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bot):
     _, day_raw, time_raw = callback.data.split("_")
     target_date = datetime.strptime(day_raw, "%Y-%m-%d").date()
     slot_hour, slot_minute = [int(part) for part in time_raw.split(":", 1)]
     schedule_time = combine_slot(target_date, datetime.min.time().replace(hour=slot_hour, minute=slot_minute))
 
-    data = await state.get_data()
+    single = _get_single_submission(callback.message.message_id)
     author = user_display(callback.from_user)
 
     async with async_session() as session:
         free_times = await get_free_slot_times(session, target_date)
-        if _is_album_submission(data):
+        data = await state.get_data()
+        if _is_album_submission(data) and single is None:
             _, _, _, schedule_index = _album_schedule_context(data)
             free_times = _filter_selected_album_times(
                 free_times,
@@ -1213,7 +1386,7 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
             await callback.answer(bot_content.message("slot_taken"), show_alert=True)
             return
 
-        if _is_album_submission(data):
+        if _is_album_submission(data) and single is None:
             await _save_album_schedule_and_continue(
                 callback,
                 state,
@@ -1223,41 +1396,45 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
             )
             await callback.answer()
             return
-        else:
-            file_id = data.get("file_id")
-            photo_id = data.get("photo_id")
-            duplicate_of_photo_id = data.get("duplicate_of_photo_id")
-            duplicate_distance = data.get("duplicate_distance")
-            animal_type = data.get("animal_type")
-            user_id = data.get("user_id")
 
-            post = await create_post(
-                session,
-                user_id=user_id,
-                file_id=file_id,
-                animal_type=animal_type,
-                is_auto_scheduled=False,
-                manual_time=schedule_time,
-                photo_id=photo_id,
-                duplicate_of_photo_id=duplicate_of_photo_id,
-                duplicate_distance=duplicate_distance,
-            )
-            await session.refresh(post, ["duplicate_of_photo"])
+        if single is None:
+            await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+            return
 
-    await state.clear()
+        file_id = single.get("file_id")
+        photo_id = single.get("photo_id")
+        duplicate_of_photo_id = single.get("duplicate_of_photo_id")
+        duplicate_distance = single.get("duplicate_distance")
+        animal_type = single.get("animal_type")
+        user_id = single.get("user_id")
 
-    await callback.message.edit_text(
+        post = await create_post(
+            session,
+            user_id=user_id,
+            file_id=file_id,
+            animal_type=animal_type,
+            is_auto_scheduled=False,
+            manual_time=schedule_time,
+            photo_id=photo_id,
+            duplicate_of_photo_id=duplicate_of_photo_id,
+            duplicate_distance=duplicate_distance,
+        )
+        await session.refresh(post, ["duplicate_of_photo"])
+
+    _finish_single_submission(callback.message.message_id)
+    await _edit_message_text_or_caption(
+        callback.message,
         bot_content.message(
             "photo_submitted_manual",
             schedule=_format_schedule(schedule_time),
-        )
+        ),
     )
 
     await _send_single_submission_to_admin(
         bot,
         post=post,
-        file_id=data.get("file_id"),
-        animal_type=data.get("animal_type"),
+        file_id=file_id,
+        animal_type=animal_type,
         schedule_time=schedule_time,
         author=author,
     )
