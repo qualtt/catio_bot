@@ -766,6 +766,34 @@ async def get_current_tournament(session: AsyncSession) -> PhotoTournament | Non
     )
 
 
+async def _entry_with_photo(
+    session: AsyncSession,
+    entry_id: int | None,
+) -> PhotoTournamentEntry | None:
+    if entry_id is None:
+        return None
+    return await session.scalar(
+        select(PhotoTournamentEntry)
+        .options(selectinload(PhotoTournamentEntry.photo))
+        .where(PhotoTournamentEntry.id == entry_id)
+    )
+
+
+async def _match_with_feeder_entries(
+    session: AsyncSession,
+    match_id: int,
+) -> PhotoTournamentMatch | None:
+    return await session.scalar(
+        select(PhotoTournamentMatch)
+        .options(
+            selectinload(PhotoTournamentMatch.left_entry).selectinload(PhotoTournamentEntry.photo),
+            selectinload(PhotoTournamentMatch.right_entry).selectinload(PhotoTournamentEntry.photo),
+            selectinload(PhotoTournamentMatch.winner_entry).selectinload(PhotoTournamentEntry.photo),
+        )
+        .where(PhotoTournamentMatch.id == match_id)
+    )
+
+
 async def _user_match_choice_entry(
     session: AsyncSession,
     *,
@@ -773,9 +801,9 @@ async def _user_match_choice_entry(
     match: PhotoTournamentMatch,
 ) -> PhotoTournamentEntry | None:
     if match.status == MATCH_BYE:
-        return match.left_entry
+        return await _entry_with_photo(session, match.left_entry_id)
     if match.winner_entry_id is not None:
-        return match.winner_entry
+        return await _entry_with_photo(session, match.winner_entry_id)
     chosen_entry_id = await session.scalar(
         select(PhotoTournamentVote.chosen_entry_id).where(
             PhotoTournamentVote.match_id == match.id,
@@ -784,7 +812,7 @@ async def _user_match_choice_entry(
     )
     if chosen_entry_id is None:
         return None
-    return await session.get(PhotoTournamentEntry, chosen_entry_id)
+    return await _entry_with_photo(session, chosen_entry_id)
 
 
 async def resolve_user_match_view(
@@ -798,7 +826,7 @@ async def resolve_user_match_view(
             return None
         return TournamentMatchView(match=match, left_entry=match.left_entry, right_entry=match.right_entry)
 
-    left_feeder = await session.get(PhotoTournamentMatch, match.feeder_left_match_id)
+    left_feeder = await _match_with_feeder_entries(session, match.feeder_left_match_id)
     if left_feeder is None:
         return None
     left_entry = await _user_match_choice_entry(session, user_id=user_id, match=left_feeder)
@@ -808,7 +836,7 @@ async def resolve_user_match_view(
     if match.feeder_right_match_id is None:
         return None
 
-    right_feeder = await session.get(PhotoTournamentMatch, match.feeder_right_match_id)
+    right_feeder = await _match_with_feeder_entries(session, match.feeder_right_match_id)
     if right_feeder is None:
         return None
     right_entry = await _user_match_choice_entry(session, user_id=user_id, match=right_feeder)

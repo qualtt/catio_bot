@@ -247,6 +247,8 @@ async def test_user_advances_to_next_round_after_first_round_vote(db_session):
     assert next_view.match.round.round_number == 2
     assert next_view.left_entry.id == first_round_matches[0].left_entry_id
     assert next_view.right_entry.id == first_round_matches[1].left_entry_id
+    assert next_view.left_entry.photo is not None
+    assert next_view.right_entry.photo is not None
 
 
 @pytest.mark.asyncio
