@@ -200,9 +200,10 @@
     "tournament_already_voted": "Вы уже голосовали в этой паре.",
     "tournament_match_unavailable": "Эта пара уже недоступна.",
     "tournament_send_failed": "Не удалось показать пару. Попробуйте позже.",
-    "tournament_voting_done": "Вы проголосовали во всех парах сетки.\n\n{status}",
+    "tournament_voting_done": "Вы прошли всю сетку голосования.\n\n{status}",
+    "tournament_champion_caption": "Ваш выбор в финале:\n\n/photo_{photo_id}\n\n{status}",
     "tournament_results": "Турнир завершен.\n\n{status}\n\nПобедитель: /photo_{winner_photo_id}\nНародный фаворит: /photo_{favorite_photo_id}",
-    "tournament_status": "{tournament_type}\nПериод: {period}\nСтатус: {status}\nРаундов: {round_number}\nУчастников: {entry_count}\nГолосование до: {voting_deadline}",
+    "tournament_status": "{tournament_type}\nПериод: {period}\nСтатус: {status}\nРаундов в сетке: {round_number}\nУчастников: {entry_count}\nГолосование до: {voting_deadline}",
     "tournament_status_running": "идет",
     "tournament_status_completed": "завершен",
     "tournament_status_cancelled": "отменен"

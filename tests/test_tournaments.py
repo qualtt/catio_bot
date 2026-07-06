@@ -7,6 +7,7 @@ from bot.services.tournaments import (
     close_due_tournaments,
     create_weekly_tournament_if_due,
     get_next_open_match_for_user,
+    get_user_tournament_champion_entry,
     resolve_user_match_view,
     submit_tournament_vote,
 )
@@ -249,6 +250,95 @@ async def test_user_advances_to_next_round_after_first_round_vote(db_session):
     assert next_view.right_entry.id == first_round_matches[1].left_entry_id
     assert next_view.left_entry.photo is not None
     assert next_view.right_entry.photo is not None
+
+
+@pytest.mark.asyncio
+async def test_user_advances_to_final_after_six_photo_bracket_votes(db_session):
+    tz = app_timezone()
+    now = datetime(2026, 7, 6, 12, 0, tzinfo=tz)
+    photos = [_photo(index) for index in range(1, 7)]
+    user = User(telegram_id=10, username="u", full_name="User")
+    db_session.add_all([*photos, user])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChannelHistory(
+                message_id=100 + index,
+                file_id=f"file-{index}",
+                photo_id=photo.id,
+                published_at=now - timedelta(days=index),
+            )
+            for index, photo in enumerate(photos, start=1)
+        ]
+    )
+    await db_session.commit()
+    tournament = await create_weekly_tournament_if_due(db_session, now=now)
+    assert tournament.current_round_number == 3
+
+    first_round_matches = list(
+        (
+            await db_session.execute(
+                select(PhotoTournamentMatch)
+                .join(PhotoTournamentRound, PhotoTournamentRound.id == PhotoTournamentMatch.round_id)
+                .where(
+                    PhotoTournamentMatch.tournament_id == tournament.id,
+                    PhotoTournamentRound.round_number == 1,
+                )
+                .order_by(PhotoTournamentMatch.match_number)
+            )
+        ).scalars()
+    )
+    for match in first_round_matches:
+        await submit_tournament_vote(
+            db_session,
+            match_id=match.id,
+            chosen_entry_id=match.left_entry_id,
+            user_id=user.id,
+        )
+
+    second_round_view = await get_next_open_match_for_user(
+        db_session,
+        user_id=user.id,
+        tournament_id=tournament.id,
+    )
+    assert second_round_view is not None
+    assert second_round_view.match.round.round_number == 2
+    await submit_tournament_vote(
+        db_session,
+        match_id=second_round_view.match.id,
+        chosen_entry_id=second_round_view.left_entry.id,
+        user_id=user.id,
+    )
+
+    final_view = await get_next_open_match_for_user(
+        db_session,
+        user_id=user.id,
+        tournament_id=tournament.id,
+    )
+    assert final_view is not None
+    assert final_view.match.round.round_number == 3
+    assert final_view.left_entry.photo is not None
+    assert final_view.right_entry.photo is not None
+
+    await submit_tournament_vote(
+        db_session,
+        match_id=final_view.match.id,
+        chosen_entry_id=final_view.left_entry.id,
+        user_id=user.id,
+    )
+
+    champion = await get_user_tournament_champion_entry(
+        db_session,
+        user_id=user.id,
+        tournament_id=tournament.id,
+    )
+    assert champion is not None
+    assert champion.id == final_view.left_entry.id
+    assert await get_next_open_match_for_user(
+        db_session,
+        user_id=user.id,
+        tournament_id=tournament.id,
+    ) is None
 
 
 @pytest.mark.asyncio

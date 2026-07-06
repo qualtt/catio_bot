@@ -14,6 +14,8 @@ from bot.services.tournaments import (
     get_current_tournament,
     get_next_open_match_for_user,
     get_tournament,
+    get_user_tournament_champion_entry,
+    tournament_entry_photo_input,
     tournament_match_photo_input,
     tournament_period_label,
     tournament_type_label,
@@ -148,6 +150,43 @@ async def _send_or_edit_match(
     )
 
 
+async def _show_champion_pick(
+    bot: Bot,
+    *,
+    chat_id: int,
+    source_message: Message | None,
+    entry: PhotoTournamentEntry,
+    status_text: str,
+    tournament_id: int,
+) -> None:
+    photo = await tournament_entry_photo_input(entry)
+    caption = bot_content.message(
+        "tournament_champion_caption",
+        photo_id=entry.photo_id,
+        status=status_text,
+    )
+    reply_markup = get_tournament_start_kb(tournament_id)
+
+    if source_message and source_message.photo:
+        try:
+            await bot.edit_message_media(
+                chat_id=chat_id,
+                message_id=source_message.message_id,
+                media=InputMediaPhoto(media=photo, caption=caption),
+                reply_markup=reply_markup,
+            )
+            return
+        except TelegramAPIError:
+            logger.exception("Failed to edit tournament champion message %s", source_message.message_id)
+
+    await bot.send_photo(
+        chat_id=chat_id,
+        photo=photo,
+        caption=caption,
+        reply_markup=reply_markup,
+    )
+
+
 async def _show_next_match(
     bot: Bot,
     *,
@@ -193,6 +232,32 @@ async def _show_next_match(
                 return
 
             status_text = await _tournament_status_text(session, tournament)
+            champion = await get_user_tournament_champion_entry(
+                session,
+                user_id=user.id,
+                tournament_id=tournament.id,
+            )
+            if champion is not None:
+                try:
+                    await _show_champion_pick(
+                        bot,
+                        chat_id=chat_id,
+                        source_message=source_message,
+                        entry=champion,
+                        status_text=status_text,
+                        tournament_id=tournament.id,
+                    )
+                except Exception:
+                    logger.exception("Failed to send tournament champion pick")
+                    await _show_status(
+                        bot,
+                        chat_id=chat_id,
+                        source_message=source_message,
+                        text=bot_content.message("tournament_voting_done", status=status_text),
+                        tournament_id=tournament.id,
+                    )
+                return
+
             await _show_status(
                 bot,
                 chat_id=chat_id,

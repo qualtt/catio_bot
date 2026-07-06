@@ -800,6 +800,16 @@ async def _user_match_choice_entry(
     user_id: int,
     match: PhotoTournamentMatch,
 ) -> PhotoTournamentEntry | None:
+    if (
+        match.feeder_left_match_id is not None
+        and match.feeder_right_match_id is None
+        and match.status == MATCH_OPEN
+    ):
+        feeder = await _match_with_feeder_entries(session, match.feeder_left_match_id)
+        if feeder is None:
+            return None
+        return await _user_match_choice_entry(session, user_id=user_id, match=feeder)
+
     if match.status == MATCH_BYE:
         return await _entry_with_photo(session, match.left_entry_id)
     if match.winner_entry_id is not None:
@@ -1016,3 +1026,47 @@ async def tournament_match_photo_input(view: TournamentMatchView) -> BufferedInp
         _compose_match_image(left_data, right_data),
         filename=f"tournament-{view.match.id}.jpg",
     )
+
+
+async def tournament_entry_photo_input(entry: PhotoTournamentEntry) -> BufferedInputFile:
+    photo = entry.photo
+    photo_data = await download_photo(
+        storage_bucket=photo.storage_bucket,
+        storage_key=photo.storage_key,
+    )
+    return BufferedInputFile(photo_data, filename=f"tournament-entry-{entry.id}.jpg")
+
+
+async def get_user_tournament_champion_entry(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    tournament_id: int,
+) -> PhotoTournamentEntry | None:
+    final_round = await session.scalar(
+        select(PhotoTournamentRound)
+        .where(PhotoTournamentRound.tournament_id == tournament_id)
+        .order_by(PhotoTournamentRound.round_number.desc())
+        .limit(1)
+    )
+    if final_round is None:
+        return None
+
+    final_match = await session.scalar(
+        select(PhotoTournamentMatch)
+        .where(PhotoTournamentMatch.round_id == final_round.id)
+        .order_by(PhotoTournamentMatch.match_number.asc())
+        .limit(1)
+    )
+    if final_match is None:
+        return None
+
+    chosen_entry_id = await session.scalar(
+        select(PhotoTournamentVote.chosen_entry_id).where(
+            PhotoTournamentVote.match_id == final_match.id,
+            PhotoTournamentVote.user_id == user_id,
+        )
+    )
+    if chosen_entry_id is None:
+        return None
+    return await _entry_with_photo(session, chosen_entry_id)
