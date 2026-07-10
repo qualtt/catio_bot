@@ -6,10 +6,13 @@ from sqlalchemy import func, select
 from bot.services.tournaments import (
     close_due_tournaments,
     create_weekly_tournament_if_due,
+    get_latest_completed_tournament,
     get_next_open_match_for_user,
     get_user_tournament_champion_entry,
     resolve_user_match_view,
+    send_tournament_results_notifications,
     submit_tournament_vote,
+    tournament_results_text,
 )
 from db.crud import app_timezone
 from db.models.channel_history import ChannelHistory
@@ -19,6 +22,8 @@ from db.models.photo_tournament import (
     MATCH_CLOSED,
     TOURNAMENT_COMPLETED,
     TOURNAMENT_RUNNING,
+    TOURNAMENT_WEEKLY,
+    PhotoTournament,
     PhotoTournamentEntry,
     PhotoTournamentMatch,
     PhotoTournamentRound,
@@ -428,3 +433,111 @@ async def test_close_due_tournament_sets_favorite_from_final_votes(db_session):
     assert tournament.status == TOURNAMENT_COMPLETED
     assert tournament.winner_photo_id == final_view.right_entry.photo_id
     assert tournament.favorite_photo_id == final_view.right_entry.photo_id
+
+
+class FakeResultsBot:
+    def __init__(self):
+        self.messages = []
+
+    async def send_message(self, **kwargs):
+        self.messages.append(kwargs)
+
+
+@pytest.mark.asyncio
+async def test_get_latest_completed_tournament_returns_most_recent(db_session):
+    tz = app_timezone()
+    now = datetime(2026, 7, 6, 12, 0, tzinfo=tz)
+    photo = _photo(1)
+    db_session.add(photo)
+    await db_session.flush()
+
+    older_start = now - timedelta(days=14)
+    older_end = now - timedelta(days=7)
+    newer_start = now - timedelta(days=7)
+    newer_end = now
+    db_session.add_all(
+        [
+            PhotoTournament(
+                type=TOURNAMENT_WEEKLY,
+                period_start=older_start,
+                period_end=older_end,
+                status=TOURNAMENT_COMPLETED,
+                current_round_number=1,
+                winner_photo_id=photo.id,
+                completed_at=older_end,
+            ),
+            PhotoTournament(
+                type=TOURNAMENT_WEEKLY,
+                period_start=newer_start,
+                period_end=newer_end,
+                status=TOURNAMENT_COMPLETED,
+                current_round_number=1,
+                winner_photo_id=photo.id,
+                completed_at=newer_end,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    tournaments = list(
+        (
+            await db_session.execute(
+                select(PhotoTournament).order_by(PhotoTournament.completed_at.asc())
+            )
+        ).scalars()
+    )
+    latest = await get_latest_completed_tournament(db_session)
+
+    assert latest is not None
+    assert latest.id == tournaments[-1].id
+
+
+@pytest.mark.asyncio
+async def test_send_tournament_results_notifications_marks_sent_at(db_session):
+    tz = app_timezone()
+    now = datetime(2026, 7, 6, 12, 0, tzinfo=tz)
+    first_photo = _photo(1)
+    second_photo = _photo(2)
+    user = User(telegram_id=1001, username="user", full_name="User")
+    db_session.add_all([first_photo, second_photo, user])
+    await db_session.flush()
+    db_session.add(
+        ChannelHistory(
+            message_id=101,
+            file_id="file-1",
+            photo_id=first_photo.id,
+            published_at=now - timedelta(days=1),
+        )
+    )
+    db_session.add(
+        ChannelHistory(
+            message_id=102,
+            file_id="file-2",
+            photo_id=second_photo.id,
+            published_at=now - timedelta(days=1),
+        )
+    )
+    await db_session.commit()
+
+    tournament = await create_weekly_tournament_if_due(db_session, now=now)
+    match = await db_session.scalar(
+        select(PhotoTournamentMatch).where(PhotoTournamentMatch.tournament_id == tournament.id)
+    )
+    match.left_votes = 2
+    tournament.voting_ends_at = now - timedelta(minutes=1)
+    await db_session.commit()
+    await close_due_tournaments(db_session, now=now)
+    await db_session.refresh(tournament)
+
+    bot = FakeResultsBot()
+    sent_count, failed_count = await send_tournament_results_notifications(bot, db_session, tournament)
+    await db_session.refresh(tournament)
+
+    assert sent_count == 1
+    assert failed_count == 0
+    assert len(bot.messages) == 1
+    assert "Победитель: /photo_" in bot.messages[0]["text"]
+    assert tournament.results_notification_sent_at is not None
+
+    text = await tournament_results_text(db_session, tournament)
+    assert f"/photo_{tournament.winner_photo_id}" in text

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 from dataclasses import dataclass
@@ -50,6 +51,8 @@ from db.models.user import User
 
 logger = logging.getLogger(__name__)
 
+TOURNAMENT_RESULTS_SEND_DELAY_SECONDS = 0.05
+
 
 @dataclass(frozen=True)
 class TournamentSourcePhoto:
@@ -89,6 +92,39 @@ def tournament_voting_deadline_label(tournament: PhotoTournament) -> str:
     if tournament.voting_ends_at is None:
         return "?"
     return ensure_app_timezone(tournament.voting_ends_at).strftime("%d.%m.%Y %H:%M")
+
+
+def tournament_status_label(status: str) -> str:
+    if status == TOURNAMENT_COMPLETED:
+        return bot_content.message("tournament_status_completed")
+    if status == TOURNAMENT_CANCELLED:
+        return bot_content.message("tournament_status_cancelled")
+    return bot_content.message("tournament_status_running")
+
+
+async def tournament_status_text(session: AsyncSession, tournament: PhotoTournament) -> str:
+    entry_count = await session.scalar(
+        select(func.count(PhotoTournamentEntry.id)).where(PhotoTournamentEntry.tournament_id == tournament.id)
+    ) or 0
+    return bot_content.message(
+        "tournament_status",
+        tournament_type=tournament_type_label(tournament.type),
+        period=tournament_period_label(tournament),
+        status=tournament_status_label(tournament.status),
+        round_number=tournament.current_round_number,
+        entry_count=entry_count,
+        voting_deadline=tournament_voting_deadline_label(tournament),
+    )
+
+
+async def tournament_results_text(session: AsyncSession, tournament: PhotoTournament) -> str:
+    status_text = await tournament_status_text(session, tournament)
+    return bot_content.message(
+        "tournament_results",
+        status=status_text,
+        winner_photo_id=tournament.winner_photo_id or "?",
+        favorite_photo_id=tournament.favorite_photo_id or "?",
+    )
 
 
 def last_completed_week_period(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -724,6 +760,71 @@ async def send_tournament_notifications(
     return sent_count
 
 
+async def send_tournament_results_notifications(
+    bot: Bot,
+    session: AsyncSession,
+    tournament: PhotoTournament,
+) -> tuple[int, int]:
+    if (
+        tournament.status != TOURNAMENT_COMPLETED
+        or tournament.results_notification_sent_at is not None
+        or tournament.winner_photo_id is None
+    ):
+        return 0, 0
+
+    text = await tournament_results_text(session, tournament)
+    users = list((await session.execute(select(User).order_by(User.id.asc()))).scalars())
+    sent_count = 0
+    failed_count = 0
+
+    for user in users:
+        try:
+            await bot.send_message(chat_id=user.telegram_id, text=text)
+            sent_count += 1
+        except TelegramAPIError as error:
+            failed_count += 1
+            logger.warning(
+                "Tournament %s results notification failed for user %s: %s",
+                tournament.id,
+                user.id,
+                error,
+            )
+        if TOURNAMENT_RESULTS_SEND_DELAY_SECONDS:
+            await asyncio.sleep(TOURNAMENT_RESULTS_SEND_DELAY_SECONDS)
+
+    tournament.results_notification_sent_at = now_in_app_tz()
+    await session.commit()
+    return sent_count, failed_count
+
+
+async def send_pending_tournament_results_notifications(bot: Bot, session: AsyncSession) -> int:
+    tournaments = list(
+        (
+            await session.execute(
+                select(PhotoTournament)
+                .where(
+                    PhotoTournament.status == TOURNAMENT_COMPLETED,
+                    PhotoTournament.results_notification_sent_at.is_(None),
+                    PhotoTournament.winner_photo_id.is_not(None),
+                )
+                .order_by(PhotoTournament.completed_at.asc(), PhotoTournament.id.asc())
+            )
+        ).scalars()
+    )
+    notified_tournaments = 0
+    for tournament in tournaments:
+        sent_count, _ = await send_tournament_results_notifications(bot, session, tournament)
+        if sent_count or tournament.results_notification_sent_at is not None:
+            notified_tournaments += 1
+            if sent_count:
+                logger.info(
+                    "Sent tournament %s results to %s users",
+                    tournament.id,
+                    sent_count,
+                )
+    return notified_tournaments
+
+
 async def run_tournament_maintenance(bot: Bot) -> None:
     if not config.PHOTO_TOURNAMENTS_ENABLED:
         return
@@ -752,6 +853,10 @@ async def run_tournament_maintenance(bot: Bot) -> None:
             if sent_count:
                 logger.info("Sent %s notifications for photo tournament %s", sent_count, tournament.id)
 
+        results_count = await send_pending_tournament_results_notifications(bot, session)
+        if results_count:
+            logger.info("Sent results notifications for %s photo tournaments", results_count)
+
 
 async def get_tournament(session: AsyncSession, tournament_id: int) -> PhotoTournament | None:
     return await session.get(PhotoTournament, tournament_id)
@@ -762,6 +867,18 @@ async def get_current_tournament(session: AsyncSession) -> PhotoTournament | Non
         select(PhotoTournament)
         .where(PhotoTournament.status == TOURNAMENT_RUNNING)
         .order_by(PhotoTournament.started_at.desc(), PhotoTournament.id.desc())
+        .limit(1)
+    )
+
+
+async def get_latest_completed_tournament(session: AsyncSession) -> PhotoTournament | None:
+    return await session.scalar(
+        select(PhotoTournament)
+        .where(
+            PhotoTournament.status == TOURNAMENT_COMPLETED,
+            PhotoTournament.winner_photo_id.is_not(None),
+        )
+        .order_by(PhotoTournament.completed_at.desc(), PhotoTournament.id.desc())
         .limit(1)
     )
 

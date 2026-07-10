@@ -52,6 +52,7 @@ class PhotoTournament(Base):
     favorite_photo_id: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), nullable=True)
     voting_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    results_notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

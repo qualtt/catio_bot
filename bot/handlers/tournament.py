@@ -5,19 +5,21 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InputMediaPhoto, Message, ReplyKeyboardRemove
-from sqlalchemy import func, select
 
 from bot.content import bot_content
 from bot.keyboards.inline import get_tournament_match_kb, get_tournament_start_kb
 from bot.services.tournaments import (
     TournamentMatchView,
     get_current_tournament,
+    get_latest_completed_tournament,
     get_next_open_match_for_user,
     get_tournament,
     get_user_tournament_champion_entry,
     tournament_entry_photo_input,
     tournament_match_photo_input,
     tournament_period_label,
+    tournament_results_text,
+    tournament_status_text,
     tournament_type_label,
     tournament_voting_deadline_label,
     submit_tournament_vote,
@@ -25,49 +27,14 @@ from bot.services.tournaments import (
 from db.crud import get_or_create_user
 from db.database import async_session
 from db.models.photo_tournament import (
-    TOURNAMENT_CANCELLED,
     TOURNAMENT_COMPLETED,
     TOURNAMENT_RUNNING,
-    PhotoTournament,
     PhotoTournamentEntry,
 )
 
 
 tournament_router = Router()
 logger = logging.getLogger(__name__)
-
-
-def _tournament_status_label(status: str) -> str:
-    if status == TOURNAMENT_COMPLETED:
-        return bot_content.message("tournament_status_completed")
-    if status == TOURNAMENT_CANCELLED:
-        return bot_content.message("tournament_status_cancelled")
-    return bot_content.message("tournament_status_running")
-
-
-async def _tournament_status_text(session, tournament: PhotoTournament) -> str:
-    entry_count = await session.scalar(
-        select(func.count(PhotoTournamentEntry.id)).where(PhotoTournamentEntry.tournament_id == tournament.id)
-    ) or 0
-    return bot_content.message(
-        "tournament_status",
-        tournament_type=tournament_type_label(tournament.type),
-        period=tournament_period_label(tournament),
-        status=_tournament_status_label(tournament.status),
-        round_number=tournament.current_round_number,
-        entry_count=entry_count,
-        voting_deadline=tournament_voting_deadline_label(tournament),
-    )
-
-
-async def _tournament_results_text(session, tournament: PhotoTournament) -> str:
-    status_text = await _tournament_status_text(session, tournament)
-    return bot_content.message(
-        "tournament_results",
-        status=status_text,
-        winner_photo_id=tournament.winner_photo_id or "?",
-        favorite_photo_id=tournament.favorite_photo_id or "?",
-    )
 
 
 def _match_caption(view: TournamentMatchView) -> str:
@@ -207,12 +174,14 @@ async def _show_next_match(
             if tournament_id is not None
             else await get_current_tournament(session)
         )
+        if tournament is None and tournament_id is None:
+            tournament = await get_latest_completed_tournament(session)
         if tournament is not None and tournament.status == TOURNAMENT_COMPLETED:
             await _show_status(
                 bot,
                 chat_id=chat_id,
                 source_message=source_message,
-                text=await _tournament_results_text(session, tournament),
+                text=await tournament_results_text(session, tournament),
             )
             return
 
@@ -231,7 +200,7 @@ async def _show_next_match(
                 )
                 return
 
-            status_text = await _tournament_status_text(session, tournament)
+            status_text = await tournament_status_text(session, tournament)
             champion = await get_user_tournament_champion_entry(
                 session,
                 user_id=user.id,
