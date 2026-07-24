@@ -346,7 +346,12 @@ async def get_channel_history_item(
 
 
 async def photo_has_known_usage(session: AsyncSession, photo_id: int) -> bool:
-    post_count = await session.scalar(select(func.count(Post.id)).where(Post.photo_id == photo_id))
+    post_count = await session.scalar(
+        select(func.count(Post.id)).where(
+            Post.photo_id == photo_id,
+            Post.status.in_(OCCUPYING_STATUSES)
+        )
+    )
     if post_count:
         return True
 
@@ -362,9 +367,21 @@ async def find_duplicate_photo(
     if await photo_has_known_usage(session, photo.id):
         return DuplicatePhotoMatch(photo_id=photo.id, distance=0, reason="exact")
 
+    valid_photo_ids = (
+        select(Post.photo_id)
+        .where(Post.photo_id.is_not(None), Post.status.in_(OCCUPYING_STATUSES))
+        .union(
+            select(ChannelHistory.photo_id).where(ChannelHistory.photo_id.is_not(None))
+        )
+    )
+
     if photo.sha256:
-        stmt = select(Photo).where(Photo.id != photo.id, Photo.sha256 == photo.sha256)
-        exact = (await session.execute(stmt)).scalar_one_or_none()
+        stmt = select(Photo).where(
+            Photo.id != photo.id,
+            Photo.sha256 == photo.sha256,
+            Photo.id.in_(valid_photo_ids)
+        )
+        exact = (await session.execute(stmt)).scalars().first()
         if exact:
             return DuplicatePhotoMatch(photo_id=exact.id, distance=0, reason="exact")
 
@@ -375,6 +392,7 @@ async def find_duplicate_photo(
     stmt = select(Photo.id, Photo.perceptual_hash).where(
         Photo.id != photo.id,
         Photo.perceptual_hash.is_not(None),
+        Photo.id.in_(valid_photo_ids)
     )
     result = await session.execute(stmt)
     best_match: DuplicatePhotoMatch | None = None
