@@ -45,6 +45,7 @@ from db.models.photo_tournament import (
     PhotoTournamentRound,
     PhotoTournamentVote,
 )
+from db.models.photo import Photo
 from db.models.post import Post, PostStatus
 from db.models.user import User
 
@@ -423,14 +424,14 @@ async def _vote_counts_for_match(
 async def _favorite_photo_id(
     session: AsyncSession,
     *,
-    final_round_id: int,
+    tournament_id: int,
 ) -> int | None:
     row = (
         await session.execute(
             select(PhotoTournamentEntry.photo_id, func.count())
             .join(PhotoTournamentVote, PhotoTournamentVote.chosen_entry_id == PhotoTournamentEntry.id)
             .join(PhotoTournamentMatch, PhotoTournamentMatch.id == PhotoTournamentVote.match_id)
-            .where(PhotoTournamentMatch.round_id == final_round_id)
+            .where(PhotoTournamentMatch.tournament_id == tournament_id)
             .group_by(PhotoTournamentEntry.photo_id)
             .order_by(func.count().desc(), PhotoTournamentEntry.photo_id.asc())
             .limit(1)
@@ -543,7 +544,7 @@ async def _close_tournament(
         winner_entry.status = ENTRY_WINNER
         tournament.winner_photo_id = winner_entry.photo_id
 
-    tournament.favorite_photo_id = await _favorite_photo_id(session, final_round_id=rounds[-1].id)
+    tournament.favorite_photo_id = await _favorite_photo_id(session, tournament_id=tournament.id)
     tournament.status = TOURNAMENT_COMPLETED
     tournament.completed_at = now
 
@@ -777,9 +778,22 @@ async def send_tournament_results_notifications(
     sent_count = 0
     failed_count = 0
 
+    photo = await session.get(Photo, tournament.winner_photo_id)
+    photo_input = photo.telegram_file_id
+    if not photo_input:
+        photo_data = await download_photo(storage_bucket=photo.storage_bucket, storage_key=photo.storage_key)
+        photo_input = BufferedInputFile(photo_data, filename=f"winner-{photo.id}.jpg")
+
+    photo_input_str = photo_input if isinstance(photo_input, str) else None
+
     for user in users:
         try:
-            await bot.send_message(chat_id=user.telegram_id, text=text)
+            if not photo_input_str and isinstance(photo_input, BufferedInputFile):
+                sent_msg = await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text)
+                photo_input_str = sent_msg.photo[-1].file_id
+                photo_input = photo_input_str
+            else:
+                await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text)
             sent_count += 1
         except TelegramAPIError as error:
             failed_count += 1
