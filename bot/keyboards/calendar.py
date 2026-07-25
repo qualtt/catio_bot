@@ -16,8 +16,8 @@ EMOJI_IDS = {
 }
 
 
-def slot_marker(day: date, min_date: date, free_slots: int, max_slots: int) -> Tuple[str, str]:
-    if day < min_date:
+def slot_marker(day: date, min_date: date, max_date: date, free_slots: int, max_slots: int) -> Tuple[str, str]:
+    if day < min_date or day > max_date:
         return "⚫️", "black"
 
     if free_slots <= 0:
@@ -82,14 +82,14 @@ def build_month_calendar(
 
             day = current_month.replace(day=day_number)
             free_slots = availability.get(day, 0)
-            fallback, color_name = slot_marker(day, min_date, free_slots, max_slots)
+            fallback, color_name = slot_marker(day, min_date, max_date, free_slots, max_slots)
             
             if day < min_date:
                 callback_data = "cal_past"
             elif free_slots <= 0:
                 callback_data = "cal_full"
             elif day > max_date:
-                callback_data = "noop"
+                callback_data = "cal_past"
             else:
                 callback_data = f"cal_day_{day.isoformat()}"
             

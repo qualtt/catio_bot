@@ -1522,7 +1522,3 @@ async def handle_album_auto_remaining(callback: CallbackQuery, state: FSMContext
     )
     await callback.answer()
 
-
-@suggest_router.callback_query(SuggestState.waiting_for_schedule_type, F.data == "noop")
-async def handle_noop(callback: CallbackQuery):
-    await callback.answer()

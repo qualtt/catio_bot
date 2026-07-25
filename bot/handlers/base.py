@@ -4,7 +4,7 @@ import re
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import CommandStart, Command
-from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message, ReplyKeyboardRemove, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from bot.config import config
 from bot.content import bot_content
@@ -313,3 +313,18 @@ async def cancel_handler(message: Message, state: FSMContext):
     await state.clear()
     message_key = "cancelled" if current_state else "nothing_to_cancel"
     await message.answer(bot_content.message(message_key), reply_markup=ReplyKeyboardRemove())
+
+
+@base_router.callback_query(F.data == "noop")
+async def handle_noop(callback: CallbackQuery):
+    await callback.answer()
+
+
+@base_router.callback_query(F.data == "cal_past")
+async def handle_cal_past(callback: CallbackQuery):
+    await callback.answer(bot_content.message("no_free_slots"), show_alert=True)
+
+
+@base_router.callback_query(F.data == "cal_full")
+async def handle_cal_full(callback: CallbackQuery):
+    await callback.answer(bot_content.message("slot_taken"), show_alert=True)
