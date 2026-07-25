@@ -266,7 +266,7 @@ async def _submit_identification_answer(
     result_text = bot_content.message(message_key, animal_type=animal_type)
 
     if result.queued_for_review:
-        await create_and_send_ready_identification_batches(bot, min_size=1)
+        await create_and_send_ready_identification_batches(bot)
 
     has_next = await _send_next_identification_photo(
         bot=bot,

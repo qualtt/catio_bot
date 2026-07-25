@@ -120,7 +120,7 @@ async def publisher_loop(bot: Bot) -> None:
             published_count = await publish_due_posts(bot)
             if published_count:
                 logger.info("Published %s scheduled posts", published_count)
-            review_batch_count = await create_and_send_ready_identification_batches(bot, min_size=1)
+            review_batch_count = await create_and_send_ready_identification_batches(bot)
             if review_batch_count:
                 logger.info("Sent %s old-photo identification review batches", review_batch_count)
             await run_tournament_maintenance(bot)

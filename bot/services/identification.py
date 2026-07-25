@@ -278,7 +278,13 @@ async def create_ready_identification_batches(
 ) -> list[int]:
     await queue_ready_identification_items(session)
 
-    min_size = max(min_size if min_size is not None else config.IDENTIFICATION_BATCH_SIZE, 1)
+    now = now_in_app_tz()
+    last_vote_time = await session.scalar(select(func.max(PhotoIdentificationVote.created_at)))
+    if last_vote_time is not None and now - last_vote_time >= timedelta(minutes=5):
+        min_size = 1
+    else:
+        min_size = max(min_size if min_size is not None else config.IDENTIFICATION_BATCH_SIZE, 1)
+
     batch_size = max(config.IDENTIFICATION_BATCH_SIZE, 1)
     result = await session.execute(
         select(ChannelHistory.suggested_animal_type, func.count(ChannelHistory.id))
@@ -294,7 +300,6 @@ async def create_ready_identification_batches(
     )
 
     batch_ids: list[int] = []
-    now = now_in_app_tz()
     for animal_type, _ in result.all():
         item_result = await session.execute(
             select(ChannelHistory)
