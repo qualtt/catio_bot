@@ -62,11 +62,11 @@ async def get_other_animal_type_kb(*, with_album_nav: bool = False) -> InlineKey
 
 def get_schedule_choice_kb(*, auto_date: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    auto_points = round(config.SCORE_APPROVED_POST_BASE * (100 + config.SCORE_AUTO_BONUS_PERCENT) / 100)
     builder.button(
         text=bot_content.button(
             "schedule_auto",
-            points=config.SCORE_APPROVED_POST_BASE,
-            bonus=config.SCORE_AUTO_BONUS_PERCENT,
+            points=auto_points,
             date=auto_date or "?",
         ),
         callback_data="schedule_auto",

@@ -33,7 +33,7 @@
     ]
   },
   "buttons": {
-    "schedule_auto": "Авто на {date} ({points} + {bonus}% баллов)",
+    "schedule_auto": "Авто на {date} ({points} баллов)",
     "schedule_manual": "Выбрать день вручную ({points} баллов)",
     "approve": "✅ Одобрить",
     "reject": "❌ Отклонить",
