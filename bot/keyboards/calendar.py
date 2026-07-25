@@ -16,22 +16,20 @@ EMOJI_IDS = {
 }
 
 
-def slot_marker(day: date, min_date: date, max_date: date, free_slots: int, max_slots: int) -> Tuple[str, str]:
-    if day < min_date or day > max_date:
+def slot_marker(day: date, min_date: date, free_slots: int, max_slots: int) -> Tuple[str, str]:
+    if day < min_date:
         return "⚫️", "black"
 
     if free_slots <= 0:
-        return "⬛️", "black"
+        return "🔴", "red"
 
     if max_slots <= 1:
-        return "🟩", "green"
+        return "🟢", "green"
 
     ratio = free_slots / max_slots
-    if ratio <= 0.34:
-        return "🟥", "red"
-    if ratio <= 0.6:
-        return "🟨", "yellow"
-    return "🟩", "green"
+    if ratio < 0.5:
+        return "🟡", "yellow"
+    return "🟢", "green"
 
 
 def _shift_month(year: int, month: int, delta: int) -> tuple[int, int]:
@@ -84,9 +82,16 @@ def build_month_calendar(
 
             day = current_month.replace(day=day_number)
             free_slots = availability.get(day, 0)
-            marker, color_name = slot_marker(day, min_date, max_date, free_slots, max_slots)
-            enabled = min_date <= day <= max_date and free_slots > 0
-            callback_data = f"cal_day_{day.isoformat()}" if enabled else "noop"
+            fallback, color_name = slot_marker(day, min_date, free_slots, max_slots)
+            
+            if day < min_date:
+                callback_data = "cal_past"
+            elif free_slots <= 0:
+                callback_data = "cal_full"
+            elif day > max_date:
+                callback_data = "noop"
+            else:
+                callback_data = f"cal_day_{day.isoformat()}"
             
             custom_emoji_id = EMOJI_IDS.get(color_name, {}).get(day_number)
             if custom_emoji_id:
@@ -96,7 +101,7 @@ def build_month_calendar(
                     icon_custom_emoji_id=custom_emoji_id
                 )
             else:
-                builder.button(text=f"{marker} {day_number}", callback_data=callback_data)
+                builder.button(text=f"{fallback}{day_number}", callback_data=callback_data)
 
     footer_buttons = footer_buttons or []
     for text, callback_data in footer_buttons:
