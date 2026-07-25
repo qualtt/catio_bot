@@ -36,32 +36,7 @@ def _post_duplicate_factor_percent(post: Post) -> int:
 
 
 async def calculate_auto_bonus_percent(session: AsyncSession) -> int:
-    min_bonus = max(config.SCORE_AUTO_BONUS_MIN_PERCENT, 0)
-    max_bonus = max(config.SCORE_AUTO_BONUS_MAX_PERCENT, min_bonus)
-    tomorrow = now_in_app_tz().date() + timedelta(days=1)
-    start_dt = combine_slot(tomorrow, time.min)
-    end_dt = combine_slot(tomorrow + timedelta(days=config.AUTO_POST_DAYS_AHEAD), time.min)
-    total_slots = max(config.AUTO_POST_DAYS_AHEAD * len(parse_daily_slot_times()), 1)
-
-    approved_count = await session.scalar(
-        select(func.count(Post.id)).where(
-            Post.status == PostStatus.APPROVED,
-            Post.schedule_time >= start_dt,
-            Post.schedule_time < end_dt,
-        )
-    )
-    pending_count = await session.scalar(
-        select(func.count(Post.id)).where(
-            Post.status == PostStatus.PENDING,
-            Post.schedule_time >= start_dt,
-            Post.schedule_time < end_dt,
-        )
-    )
-
-    pending_weight = _clamp_percent(config.SCORE_PENDING_POST_WEIGHT_PERCENT) / 100
-    effective_posts = (approved_count or 0) + (pending_count or 0) * pending_weight
-    coverage = min(effective_posts / total_slots, 1)
-    return round(min_bonus + (max_bonus - min_bonus) * (1 - coverage))
+    return max(config.SCORE_AUTO_BONUS_PERCENT, 0)
 
 
 async def calculate_post_approval_score(session: AsyncSession, post: Post) -> ScoreAward:

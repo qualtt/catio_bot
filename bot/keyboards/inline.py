@@ -60,14 +60,14 @@ async def get_other_animal_type_kb(*, with_album_nav: bool = False) -> InlineKey
     builder.adjust(*_two_column_rows(len(animal_types), footer_count=2), *([2] if with_album_nav else []))
     return builder.as_markup()
 
-def get_schedule_choice_kb() -> InlineKeyboardMarkup:
+def get_schedule_choice_kb(*, auto_date: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(
         text=bot_content.button(
             "schedule_auto",
             points=config.SCORE_APPROVED_POST_BASE,
-            bonus_min=config.SCORE_AUTO_BONUS_MIN_PERCENT,
-            bonus_max=config.SCORE_AUTO_BONUS_MAX_PERCENT,
+            bonus=config.SCORE_AUTO_BONUS_PERCENT,
+            date=auto_date or "?",
         ),
         callback_data="schedule_auto",
     )

@@ -389,10 +389,14 @@ async def _select_single_animal_type(callback: CallbackQuery, animal_type: str) 
 
     single["animal_type"] = animal_type
     single["stage"] = "schedule"
+    async with async_session() as session:
+        next_slot = await get_next_auto_slot(session, animal_type=animal_type)
+    auto_date = next_slot.strftime("%d.%m") if next_slot else None
+
     await _edit_callback_prompt(
         callback,
         bot_content.message("animal_type_selected", animal_type=animal_type),
-        reply_markup=get_schedule_choice_kb(),
+        reply_markup=get_schedule_choice_kb(auto_date=auto_date),
     )
     await callback.answer()
 
@@ -405,12 +409,16 @@ async def _ask_single_schedule(bot: Bot, *, chat_id: int, message_id: int, anima
     single["animal_type"] = animal_type
     single["stage"] = "schedule"
     _custom_animal_prompt_by_user.pop(single.get("user_id"), None)
+    async with async_session() as session:
+        next_slot = await get_next_auto_slot(session, animal_type=animal_type)
+    auto_date = next_slot.strftime("%d.%m") if next_slot else None
+
     await _edit_bot_message_text_or_caption(
         bot,
         chat_id=chat_id,
         message_id=message_id,
         text=bot_content.message("animal_type_selected", animal_type=animal_type),
-        reply_markup=get_schedule_choice_kb(),
+        reply_markup=get_schedule_choice_kb(auto_date=auto_date),
     )
 
 
@@ -564,10 +572,16 @@ async def _continue_album_or_ask_schedule(
         count=len(items),
         summary=_album_animal_summary(items),
     )
+    auto_date = None
+    if items:
+        async with async_session() as session:
+            next_slot = await get_next_auto_slot(session, animal_type=items[0].animal_type)
+        auto_date = next_slot.strftime("%d.%m") if next_slot else None
+
     if source_message:
-        await _edit_message_text_or_caption(source_message, text, reply_markup=get_schedule_choice_kb())
-    elif not await _edit_album_prompt_caption(bot, state, text, reply_markup=get_schedule_choice_kb()):
-        await bot.send_message(chat_id=chat_id, text=text, reply_markup=get_schedule_choice_kb())
+        await _edit_message_text_or_caption(source_message, text, reply_markup=get_schedule_choice_kb(auto_date=auto_date))
+    elif not await _edit_album_prompt_caption(bot, state, text, reply_markup=get_schedule_choice_kb(auto_date=auto_date)):
+        await bot.send_message(chat_id=chat_id, text=text, reply_markup=get_schedule_choice_kb(auto_date=auto_date))
 
 
 async def _handle_album_animal_selected(
