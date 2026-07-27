@@ -1,8 +1,9 @@
-import os
 import json
+import os
 import time
-import requests
 from io import BytesIO
+
+import requests
 from PIL import Image, ImageDraw, ImageFont
 
 # ==========================================
@@ -44,11 +45,11 @@ def generate_emoji_image(number, color_hex):
     try:
         # Стандартный шрифт для macOS
         font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
-    except IOError:
+    except OSError:
         try:
             # Запасной вариант
             font = ImageFont.truetype("arial.ttf", font_size)
-        except IOError:
+        except OSError:
             font = ImageFont.load_default()
             
     text = str(number)

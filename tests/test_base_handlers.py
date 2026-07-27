@@ -2,8 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile
-from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardRemove
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, ReplyKeyboardRemove
 
 from bot.handlers import base
 from bot.handlers.base import (

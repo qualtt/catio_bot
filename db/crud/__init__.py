@@ -55,4 +55,9 @@ from .time_utils import (
     now_in_app_tz,
     parse_daily_slot_times,
 )
-from .users import add_user_score, get_or_create_user, get_top_users
+from .users import (
+    add_user_score,
+    get_or_create_user,
+    get_top_users,
+    get_top_users_by_posts,
+)

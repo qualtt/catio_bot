@@ -1,7 +1,11 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from bot.services.captions import admin_album_view_caption, album_submission_photo_caption, submission_caption
+from bot.services.captions import (
+    admin_album_view_caption,
+    album_submission_photo_caption,
+    submission_caption,
+)
 from db.models.post import PostStatus
 
 

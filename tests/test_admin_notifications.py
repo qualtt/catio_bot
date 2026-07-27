@@ -4,8 +4,8 @@ from bot.handlers.admin import (
     approved_callback_text,
     approved_user_notification_text,
     duplicate_rejection_reason,
-    normalize_rejection_reason,
     normalize_duplicate_rejection_reason,
+    normalize_rejection_reason,
     rejected_admin_caption,
     rejected_user_notification_text,
 )

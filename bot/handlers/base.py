@@ -15,7 +15,7 @@ from aiogram.types import (
 
 from bot.config import config
 from bot.content import bot_content
-from bot.keyboards.inline import get_main_menu_kb
+from bot.keyboards.inline import get_leaderboard_kb, get_main_menu_kb
 from bot.services.photo_storage import download_photo
 from db.crud import (
     ensure_app_timezone,
@@ -25,6 +25,7 @@ from db.crud import (
     get_random_public_photo,
     get_recent_user_posts,
     get_top_users,
+    get_top_users_by_posts,
     get_user_post_stats,
     user_can_view_photo,
 )
@@ -310,8 +311,48 @@ async def top_handler(message: Message):
 
     await message.answer(
         bot_content.message("top_header", users="\n".join(lines)),
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=get_leaderboard_kb("score"),
     )
+
+
+@base_router.callback_query(F.data == "top_score")
+async def top_score_callback(callback: CallbackQuery):
+    async with async_session() as session:
+        users = await get_top_users(session)
+
+    if not users:
+        await callback.answer(bot_content.message("top_empty"))
+        return
+
+    lines = []
+    for index, user in enumerate(users, start=1):
+        name = user.username or user.full_name or str(user.telegram_id)
+        lines.append(bot_content.message("top_line", position=index, name=name, score=user.score))
+
+    text = bot_content.message("top_header", users="\n".join(lines))
+    if callback.message and callback.message.text != text:
+        await callback.message.edit_text(text, reply_markup=get_leaderboard_kb("score"))
+    await callback.answer()
+
+
+@base_router.callback_query(F.data == "top_posts")
+async def top_posts_callback(callback: CallbackQuery):
+    async with async_session() as session:
+        users_with_counts = await get_top_users_by_posts(session)
+
+    if not users_with_counts:
+        await callback.answer(bot_content.message("top_empty"))
+        return
+
+    lines = []
+    for index, (user, count) in enumerate(users_with_counts, start=1):
+        name = user.username or user.full_name or str(user.telegram_id)
+        lines.append(bot_content.message("top_line_posts", position=index, name=name, count=count))
+
+    text = bot_content.message("top_header", users="\n".join(lines))
+    if callback.message and callback.message.text != text:
+        await callback.message.edit_text(text, reply_markup=get_leaderboard_kb("posts"))
+    await callback.answer()
 
 
 @base_router.message(Command("cancel"))

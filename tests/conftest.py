@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 ENV_DEFAULTS = {
@@ -24,8 +23,8 @@ ENV_DEFAULTS = {
 for key, value in ENV_DEFAULTS.items():
     os.environ.setdefault(key, value)
 
-import db.models  # noqa: E402,F401
-from db.models import Base  # noqa: E402
+import db.models  # noqa: F401
+from db.models import Base
 
 
 @pytest_asyncio.fixture

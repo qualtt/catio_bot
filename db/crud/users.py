@@ -1,6 +1,7 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.models.post import Post, PostStatus
 from db.models.user import User
 
 
@@ -31,5 +32,17 @@ async def add_user_score(session: AsyncSession, user_id: int, score_to_add: int)
 async def get_top_users(session: AsyncSession, limit: int = 10) -> list[User]:
     stmt = select(User).order_by(User.score.desc(), User.id.asc()).limit(limit)
     return list((await session.execute(stmt)).scalars())
+
+
+async def get_top_users_by_posts(session: AsyncSession, limit: int = 10) -> list[tuple[User, int]]:
+    stmt = (
+        select(User, func.count(Post.id))
+        .join(Post, Post.user_id == User.id)
+        .where(Post.status.in_([PostStatus.APPROVED, PostStatus.PUBLISHED]))
+        .group_by(User.id)
+        .order_by(func.count(Post.id).desc(), User.id.asc())
+        .limit(limit)
+    )
+    return list(await session.execute(stmt))
 
 

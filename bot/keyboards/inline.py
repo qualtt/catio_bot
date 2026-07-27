@@ -384,3 +384,20 @@ def get_tournament_match_kb(match, *, left_entry_id: int, right_entry_id: int) -
     builder.button(text=bot_content.button("tournament_refresh"), callback_data=f"tourn_open_{match.tournament_id}")
     builder.adjust(2, 1)
     return builder.as_markup()
+
+
+def get_leaderboard_kb(current_tab: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    
+    score_text = bot_content.button("top_tab_score")
+    if current_tab == "score":
+        score_text = f"• {score_text} •"
+        
+    posts_text = bot_content.button("top_tab_posts")
+    if current_tab == "posts":
+        posts_text = f"• {posts_text} •"
+        
+    builder.button(text=score_text, callback_data="top_score")
+    builder.button(text=posts_text, callback_data="top_posts")
+    builder.adjust(2)
+    return builder.as_markup()

@@ -72,7 +72,9 @@
     "tournament_vote": "Голосовать",
     "tournament_pick_left": "↑",
     "tournament_pick_right": "↑",
-    "tournament_refresh": "Обновить"
+    "tournament_refresh": "Обновить",
+    "top_tab_score": "По очкам 🏆",
+    "top_tab_posts": "По фото 📸"
   },
   "messages": {
     "start": "Привет! Это бот-предложка канала <a href=\"https://t.me/street_kots\">котики и не только почти каждый день</a>.\n\nПросто отправь мне фото, которое хочешь предложить!",
@@ -85,6 +87,7 @@
     "top_empty": "Рейтинг пока пуст.",
     "top_header": "Топ участников:\n{users}",
     "top_line": "{position}. {name}: {score}",
+    "top_line_posts": "{position}. {name} — {count} фото",
     "cancelled": "Текущая отправка отменена.",
     "nothing_to_cancel": "Сейчас нечего отменять.",
     "ask_animal_type": "Кто на фото?",
