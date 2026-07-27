@@ -1,4 +1,6 @@
+import logging
 from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
@@ -25,7 +27,12 @@ from bot.keyboards.inline import (
     get_admin_schedule_kb,
 )
 from bot.services.broadcast import BROADCAST_MESSAGE_LIMIT, broadcast_message
-from bot.services.captions import admin_album_control_text, admin_album_view_caption, format_schedule, submission_caption
+from bot.services.captions import (
+    admin_album_control_text,
+    admin_album_view_caption,
+    format_schedule,
+    submission_caption,
+)
 from bot.services.publisher import publish_post
 from bot.services.scoring import award_post_approval_score
 from db.crud import (
@@ -42,6 +49,7 @@ from db.database import async_session
 from db.models.post import Post, PostStatus
 
 admin_router = Router()
+logger = logging.getLogger(__name__)
 
 
 class AdminState(StatesGroup):
@@ -88,7 +96,7 @@ def parse_admin_datetime(raw_value: str) -> datetime | None:
     value = " ".join(raw_value.split())
     for date_time_format in ("%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M"):
         try:
-            parsed = datetime.strptime(value, date_time_format)
+            parsed = datetime.strptime(value, date_time_format).replace(tzinfo=ZoneInfo("UTC"))
         except ValueError:
             continue
         return parsed.replace(tzinfo=app_timezone())
@@ -642,6 +650,7 @@ async def handle_admin_publish_now(callback: CallbackQuery, bot: Bot):
         try:
             await publish_post(bot, session, post, published_at=now_in_app_tz())
         except Exception:
+            logger.exception("Failed to publish post %d", post_id)
             await callback.answer(bot_content.message("admin_publish_failed"), show_alert=True)
             return
 

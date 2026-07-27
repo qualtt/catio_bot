@@ -3,14 +3,20 @@ import re
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
-from aiogram.filters import CommandStart, Command
-from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message, ReplyKeyboardRemove, CallbackQuery
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    Message,
+    ReplyKeyboardRemove,
+)
+
 from bot.config import config
 from bot.content import bot_content
 from bot.keyboards.inline import get_main_menu_kb
 from bot.services.photo_storage import download_photo
-from db.database import async_session
 from db.crud import (
     ensure_app_timezone,
     get_or_create_user,
@@ -22,6 +28,7 @@ from db.crud import (
     get_user_post_stats,
     user_can_view_photo,
 )
+from db.database import async_session
 from db.models.photo import Photo
 from db.models.post import Post, PostStatus
 

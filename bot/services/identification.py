@@ -16,7 +16,6 @@ from db.models.photo_identification import (
     PhotoIdentificationVote,
 )
 
-
 ASSIGNMENT_ASSIGNED = "assigned"
 ASSIGNMENT_ANSWERED = "answered"
 ASSIGNMENT_EXPIRED = "expired"

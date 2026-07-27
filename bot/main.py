@@ -1,13 +1,15 @@
 import asyncio
 import logging
 from contextlib import suppress
+
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.redis import RedisStorage
+
 from bot.config import config
-from bot.handlers.base import base_router
-from bot.handlers.suggest import suggest_router
 from bot.handlers.admin import admin_router
+from bot.handlers.base import base_router
 from bot.handlers.identify import identify_router
+from bot.handlers.suggest import suggest_router
 from bot.handlers.tournament import tournament_router
 from bot.services.publisher import publisher_loop
 

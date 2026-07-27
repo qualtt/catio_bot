@@ -1,6 +1,5 @@
 import calendar
 from datetime import date
-from typing import Tuple
 
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -16,7 +15,7 @@ EMOJI_IDS = {
 }
 
 
-def slot_marker(day: date, min_date: date, max_date: date, free_slots: int, max_slots: int) -> Tuple[str, str]:
+def slot_marker(day: date, min_date: date, max_date: date, free_slots: int, max_slots: int) -> tuple[str, str]:
     if day < min_date or day > max_date:
         return "⚫️", "black"
 

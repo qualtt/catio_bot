@@ -1,4 +1,9 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from db.models.channel_history import ChannelHistory
+    from db.models.post import Post
 
 from sqlalchemy import BigInteger, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship

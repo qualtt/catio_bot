@@ -1,8 +1,19 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from db.models.photo import Photo
+    from db.models.photo_identification import (
+        PhotoIdentificationAssignment,
+        PhotoIdentificationBatchItem,
+        PhotoIdentificationVote,
+    )
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from .base import Base
+
 
 class ChannelHistory(Base):
     __tablename__ = "channel_history"

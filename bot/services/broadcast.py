@@ -10,7 +10,6 @@ from sqlalchemy import select
 from db.database import async_session
 from db.models.user import User
 
-
 logger = logging.getLogger(__name__)
 
 BROADCAST_MESSAGE_LIMIT = 4096

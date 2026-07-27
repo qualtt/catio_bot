@@ -1,8 +1,16 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, String, ForeignKey, DateTime, Boolean, Enum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from .base import Base
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from db.models.photo import Photo
+    from db.models.user import User
 import enum
+
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import Base
+
 
 class PostStatus(str, enum.Enum):
     PENDING = "pending"

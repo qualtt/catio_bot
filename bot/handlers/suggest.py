@@ -210,7 +210,7 @@ def _next_unscheduled_index(schedule_times: list[datetime | None], start_at: int
         if schedule_times[index] is None:
             return index
 
-    for index in range(0, min(start_at, len(schedule_times))):
+    for index in range(min(start_at, len(schedule_times))):
         if schedule_times[index] is None:
             return index
 
@@ -222,7 +222,7 @@ def _next_untyped_album_index(items: list[dict], start_at: int = 0) -> int | Non
         if not items[index].get("animal_type"):
             return index
 
-    for index in range(0, min(start_at, len(items))):
+    for index in range(min(start_at, len(items))):
         if not items[index].get("animal_type"):
             return index
 
@@ -1314,7 +1314,7 @@ async def handle_calendar_nav(callback: CallbackQuery, state: FSMContext):
     today = now_in_app_tz().date()
     min_date = today + timedelta(days=1)
     max_date = min_date + timedelta(days=config.AUTO_POST_DAYS_AHEAD - 1)
-    shown_date = datetime(year=year, month=month, day=1).date()
+    shown_date = date(year=year, month=month, day=1)
     if shown_date < min_date.replace(day=1) or shown_date > max_date.replace(day=1):
         await callback.answer()
         return
@@ -1334,7 +1334,7 @@ async def handle_calendar_nav(callback: CallbackQuery, state: FSMContext):
 @suggest_router.callback_query(F.data.startswith("cal_day_"))
 async def handle_calendar_day(callback: CallbackQuery, state: FSMContext):
     _, _, day_raw = callback.data.split("_")
-    target_date = datetime.strptime(day_raw, "%Y-%m-%d").date()
+    target_date = date.fromisoformat(day_raw)
 
     async with async_session() as session:
         free_times = await get_free_slot_times(session, target_date)
@@ -1378,7 +1378,7 @@ async def handle_calendar_day(callback: CallbackQuery, state: FSMContext):
 @suggest_router.callback_query(F.data.startswith("time_"))
 async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bot):
     _, day_raw, time_raw = callback.data.split("_")
-    target_date = datetime.strptime(day_raw, "%Y-%m-%d").date()
+    target_date = date.fromisoformat(day_raw)
     slot_hour, slot_minute = [int(part) for part in time_raw.split(":", 1)]
     schedule_time = combine_slot(target_date, datetime.min.time().replace(hour=slot_hour, minute=slot_minute))
 

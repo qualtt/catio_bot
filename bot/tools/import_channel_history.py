@@ -22,7 +22,6 @@ from db.crud import (
 from db.database import async_session
 from db.models.photo import Photo
 
-
 logger = logging.getLogger(__name__)
 
 

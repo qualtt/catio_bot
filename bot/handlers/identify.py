@@ -18,8 +18,8 @@ from bot.keyboards.inline import (
     get_identification_other_animal_type_kb,
 )
 from bot.services.identification import (
-    BatchFinalization,
     ITEM_REJECTED,
+    BatchFinalization,
     create_ready_identification_batches,
     finalize_identification_batch,
     get_identification_batch,
@@ -29,10 +29,14 @@ from bot.services.identification import (
     toggle_identification_batch_item,
 )
 from bot.services.photo_storage import download_photo
-from db.crud import animal_type_has_unsupported_latin, canonical_animal_type, get_animal_type_name, get_or_create_user
+from db.crud import (
+    animal_type_has_unsupported_latin,
+    canonical_animal_type,
+    get_animal_type_name,
+    get_or_create_user,
+)
 from db.database import async_session
 from db.models.channel_history import ChannelHistory
-
 
 identify_router = Router()
 logger = logging.getLogger(__name__)

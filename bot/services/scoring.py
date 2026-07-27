@@ -1,16 +1,15 @@
 from dataclasses import dataclass
-from datetime import time, timedelta
+from datetime import time
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.config import config
-from db.crud import combine_slot, now_in_app_tz, parse_daily_slot_times
-from db.models.post import Post, PostStatus
+from db.crud import combine_slot, now_in_app_tz
+from db.models.post import Post
 from db.models.score_event import ScoreEvent
 from db.models.user import User
-
 
 POST_APPROVED_EVENT = "post_approved"
 OLD_PHOTO_IDENTIFIED_EVENT = "old_photo_identified"

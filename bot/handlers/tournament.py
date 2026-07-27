@@ -15,6 +15,7 @@ from bot.services.tournaments import (
     get_next_open_match_for_user,
     get_tournament,
     get_user_tournament_champion_entry,
+    submit_tournament_vote,
     tournament_entry_photo_input,
     tournament_match_photo_input,
     tournament_period_label,
@@ -22,7 +23,6 @@ from bot.services.tournaments import (
     tournament_status_text,
     tournament_type_label,
     tournament_voting_deadline_label,
-    submit_tournament_vote,
 )
 from db.crud import get_or_create_user
 from db.database import async_session
@@ -31,7 +31,6 @@ from db.models.photo_tournament import (
     TOURNAMENT_RUNNING,
     PhotoTournamentEntry,
 )
-
 
 tournament_router = Router()
 logger = logging.getLogger(__name__)
@@ -132,7 +131,7 @@ async def _show_champion_pick(
         photo_id=entry.photo_id,
         status=status_text,
     )
-    reply_markup = get_tournament_start_kb(tournament_id)
+    reply_markup = None
 
     if source_message and source_message.photo:
         try:
@@ -223,7 +222,7 @@ async def _show_next_match(
                         chat_id=chat_id,
                         source_message=source_message,
                         text=bot_content.message("tournament_voting_done", status=status_text),
-                        tournament_id=tournament.id,
+                        tournament_id=None,
                     )
                 return
 
@@ -232,7 +231,7 @@ async def _show_next_match(
                 chat_id=chat_id,
                 source_message=source_message,
                 text=bot_content.message("tournament_voting_done", status=status_text),
-                tournament_id=tournament.id,
+                tournament_id=None,
             )
             return
 

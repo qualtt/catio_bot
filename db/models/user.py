@@ -1,6 +1,18 @@
+from typing import TYPE_CHECKING
+
 from sqlalchemy import BigInteger, String
+
+if TYPE_CHECKING:
+    from db.models.photo_identification import (
+        PhotoIdentificationAssignment,
+        PhotoIdentificationVote,
+    )
+    from db.models.post import Post
+    from db.models.score_event import ScoreEvent
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from .base import Base
+
 
 class User(Base):
     __tablename__ = "users"

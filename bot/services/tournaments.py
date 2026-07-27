@@ -22,6 +22,7 @@ from bot.services.photo_storage import download_photo
 from db.crud import combine_slot, ensure_app_timezone, now_in_app_tz
 from db.database import async_session
 from db.models.channel_history import ChannelHistory
+from db.models.photo import Photo
 from db.models.photo_tournament import (
     ENTRY_ACTIVE,
     ENTRY_ELIMINATED,
@@ -45,10 +46,8 @@ from db.models.photo_tournament import (
     PhotoTournamentRound,
     PhotoTournamentVote,
 )
-from db.models.photo import Photo
 from db.models.post import Post, PostStatus
 from db.models.user import User
-
 
 logger = logging.getLogger(__name__)
 
@@ -503,8 +502,8 @@ async def _close_tournament(
             match.left_entry_id = left_entry.id if left_entry is not None else None
             match.right_entry_id = right_entry.id if right_entry is not None else None
 
-            if right_entry is None:
-                winner = left_entry
+            if right_entry is None or left_entry is None:
+                winner = left_entry if right_entry is None else right_entry
                 match.winner_entry_id = winner.id if winner is not None else None
                 match.status = MATCH_BYE if winner is not None else MATCH_CLOSED
             else:
@@ -779,6 +778,10 @@ async def send_tournament_results_notifications(
     failed_count = 0
 
     photo = await session.get(Photo, tournament.winner_photo_id)
+    if photo is None:
+        logger.error(f"Winner photo {tournament.winner_photo_id} not found for tournament {tournament.id}")
+        return 0, 0
+
     photo_input = photo.telegram_file_id
     if not photo_input:
         photo_data = await download_photo(storage_bucket=photo.storage_bucket, storage_key=photo.storage_key)
@@ -790,8 +793,9 @@ async def send_tournament_results_notifications(
         try:
             if not photo_input_str and isinstance(photo_input, BufferedInputFile):
                 sent_msg = await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text)
-                photo_input_str = sent_msg.photo[-1].file_id
-                photo_input = photo_input_str
+                if sent_msg.photo:
+                    photo_input_str = sent_msg.photo[-1].file_id
+                    photo_input = photo_input_str
             else:
                 await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text)
             sent_count += 1

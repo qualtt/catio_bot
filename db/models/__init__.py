@@ -1,10 +1,7 @@
-from .base import Base
-from .user import User
 from .animal_type import AnimalType
-from .photo import Photo
-from .post import Post
+from .base import Base
 from .channel_history import ChannelHistory
-from .score_event import ScoreEvent
+from .photo import Photo
 from .photo_identification import (
     PhotoIdentificationAssignment,
     PhotoIdentificationBatch,
@@ -19,15 +16,15 @@ from .photo_tournament import (
     PhotoTournamentRound,
     PhotoTournamentVote,
 )
+from .post import Post
+from .score_event import ScoreEvent
+from .user import User
 
 __all__ = [
-    "Base",
-    "User",
     "AnimalType",
-    "Photo",
-    "Post",
+    "Base",
     "ChannelHistory",
-    "ScoreEvent",
+    "Photo",
     "PhotoIdentificationAssignment",
     "PhotoIdentificationBatch",
     "PhotoIdentificationBatchItem",
@@ -38,4 +35,7 @@ __all__ = [
     "PhotoTournamentNotification",
     "PhotoTournamentRound",
     "PhotoTournamentVote",
+    "Post",
+    "ScoreEvent",
+    "User",
 ]

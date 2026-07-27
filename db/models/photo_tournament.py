@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
-
 
 TOURNAMENT_WEEKLY = "weekly"
 TOURNAMENT_MONTHLY = "monthly"
@@ -59,16 +66,16 @@ class PhotoTournament(Base):
 
     winner_photo = relationship("Photo", foreign_keys=[winner_photo_id])
     favorite_photo = relationship("Photo", foreign_keys=[favorite_photo_id])
-    entries: Mapped[list["PhotoTournamentEntry"]] = relationship(
+    entries: Mapped[list[PhotoTournamentEntry]] = relationship(
         back_populates="tournament",
         foreign_keys="PhotoTournamentEntry.tournament_id",
         order_by="PhotoTournamentEntry.seed",
     )
-    rounds: Mapped[list["PhotoTournamentRound"]] = relationship(
+    rounds: Mapped[list[PhotoTournamentRound]] = relationship(
         back_populates="tournament",
         order_by="PhotoTournamentRound.round_number",
     )
-    notifications: Mapped[list["PhotoTournamentNotification"]] = relationship(back_populates="tournament")
+    notifications: Mapped[list[PhotoTournamentNotification]] = relationship(back_populates="tournament")
 
 
 class PhotoTournamentEntry(Base):
@@ -93,7 +100,7 @@ class PhotoTournamentEntry(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=ENTRY_ACTIVE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    tournament: Mapped["PhotoTournament"] = relationship(
+    tournament: Mapped[PhotoTournament] = relationship(
         back_populates="entries",
         foreign_keys=[tournament_id],
     )
@@ -118,8 +125,8 @@ class PhotoTournamentRound(Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    tournament: Mapped["PhotoTournament"] = relationship(back_populates="rounds")
-    matches: Mapped[list["PhotoTournamentMatch"]] = relationship(
+    tournament: Mapped[PhotoTournament] = relationship(back_populates="rounds")
+    matches: Mapped[list[PhotoTournamentMatch]] = relationship(
         back_populates="round",
         order_by="PhotoTournamentMatch.match_number",
     )
@@ -153,20 +160,20 @@ class PhotoTournamentMatch(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=MATCH_OPEN)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    tournament: Mapped["PhotoTournament"] = relationship()
-    round: Mapped["PhotoTournamentRound"] = relationship(back_populates="matches")
-    feeder_left_match: Mapped["PhotoTournamentMatch | None"] = relationship(
+    tournament: Mapped[PhotoTournament] = relationship()
+    round: Mapped[PhotoTournamentRound] = relationship(back_populates="matches")
+    feeder_left_match: Mapped[PhotoTournamentMatch | None] = relationship(
         foreign_keys=[feeder_left_match_id],
         remote_side="PhotoTournamentMatch.id",
     )
-    feeder_right_match: Mapped["PhotoTournamentMatch | None"] = relationship(
+    feeder_right_match: Mapped[PhotoTournamentMatch | None] = relationship(
         foreign_keys=[feeder_right_match_id],
         remote_side="PhotoTournamentMatch.id",
     )
-    left_entry: Mapped["PhotoTournamentEntry"] = relationship(foreign_keys=[left_entry_id])
-    right_entry: Mapped["PhotoTournamentEntry | None"] = relationship(foreign_keys=[right_entry_id])
-    winner_entry: Mapped["PhotoTournamentEntry | None"] = relationship(foreign_keys=[winner_entry_id])
-    votes: Mapped[list["PhotoTournamentVote"]] = relationship(back_populates="match")
+    left_entry: Mapped[PhotoTournamentEntry] = relationship(foreign_keys=[left_entry_id])
+    right_entry: Mapped[PhotoTournamentEntry | None] = relationship(foreign_keys=[right_entry_id])
+    winner_entry: Mapped[PhotoTournamentEntry | None] = relationship(foreign_keys=[winner_entry_id])
+    votes: Mapped[list[PhotoTournamentVote]] = relationship(back_populates="match")
 
 
 class PhotoTournamentVote(Base):
@@ -184,10 +191,10 @@ class PhotoTournamentVote(Base):
     chosen_entry_id: Mapped[int] = mapped_column(ForeignKey("photo_tournament_entries.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    tournament: Mapped["PhotoTournament"] = relationship()
-    match: Mapped["PhotoTournamentMatch"] = relationship(back_populates="votes")
+    tournament: Mapped[PhotoTournament] = relationship()
+    match: Mapped[PhotoTournamentMatch] = relationship(back_populates="votes")
     user = relationship("User")
-    chosen_entry: Mapped["PhotoTournamentEntry"] = relationship()
+    chosen_entry: Mapped[PhotoTournamentEntry] = relationship()
 
 
 class PhotoTournamentNotification(Base):
@@ -205,5 +212,5 @@ class PhotoTournamentNotification(Base):
     error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
-    tournament: Mapped["PhotoTournament"] = relationship(back_populates="notifications")
+    tournament: Mapped[PhotoTournament] = relationship(back_populates="notifications")
     user = relationship("User")

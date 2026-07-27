@@ -1,18 +1,19 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta, date, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
-from sqlalchemy import and_, select, func
+
+from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from bot.config import config
+from bot.services.photo_storage import hamming_distance
 from db.models.animal_type import AnimalType
 from db.models.channel_history import ChannelHistory
 from db.models.photo import Photo
-from db.models.user import User
 from db.models.post import Post, PostStatus
-from bot.config import config
-from bot.services.photo_storage import hamming_distance
-
+from db.models.user import User
 
 OCCUPYING_STATUSES = [PostStatus.PENDING, PostStatus.APPROVED, PostStatus.PUBLISHED]
 POPULARITY_STATUSES = [PostStatus.APPROVED, PostStatus.PUBLISHED]
@@ -218,14 +219,14 @@ async def ensure_animal_type(session: AsyncSession, value: str | None, is_primar
     animal_type = AnimalType(
         name=normalized,
         is_primary=is_primary,
-        sort_order=max_sort_order + 10,
+        sort_order=(max_sort_order or 0) + 10,
     )
     session.add(animal_type)
     await session.flush()
     return animal_type
 
 
-async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str = None, full_name: str = None) -> User:
+async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str | None = None, full_name: str | None = None) -> User:
     stmt = select(User).where(User.telegram_id == telegram_id)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
@@ -736,7 +737,7 @@ async def create_post(
     file_id: str,
     animal_type: str,
     is_auto_scheduled: bool = False,
-    manual_time: datetime = None,
+    manual_time: datetime | None = None,
     photo_id: int | None = None,
     duplicate_of_photo_id: int | None = None,
     duplicate_distance: int | None = None,
