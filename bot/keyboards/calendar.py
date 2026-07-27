@@ -49,6 +49,7 @@ def build_month_calendar(
     max_date: date,
     max_slots: int,
     footer_buttons: list[tuple[str, str]] | None = None,
+    prefix: str = "cal",
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     calendar.setfirstweekday(calendar.MONDAY)
@@ -61,13 +62,13 @@ def build_month_calendar(
     next_enabled = date(next_year, next_month, 1) <= _month_start(max_date)
 
     builder.button(
-        text="‹",
-        callback_data=f"cal_nav_{prev_year}_{prev_month}" if prev_enabled else "noop",
+        text="←",
+        callback_data=f"{prefix}_nav_{prev_year}_{prev_month}" if prev_enabled else "noop",
     )
     builder.button(text=f"{bot_content.month_name(month)} {year}", callback_data="noop")
     builder.button(
-        text="›",
-        callback_data=f"cal_nav_{next_year}_{next_month}" if next_enabled else "noop",
+        text="→",
+        callback_data=f"{prefix}_nav_{next_year}_{next_month}" if next_enabled else "noop",
     )
 
     for weekday in bot_content.weekday_names():
@@ -84,13 +85,13 @@ def build_month_calendar(
             fallback, color_name = slot_marker(day, min_date, max_date, free_slots, max_slots)
             
             if day < min_date:
-                callback_data = "cal_past"
+                callback_data = f"{prefix}_past"
             elif free_slots <= 0:
-                callback_data = "cal_full"
+                callback_data = f"{prefix}_full"
             elif day > max_date:
-                callback_data = "cal_past"
+                callback_data = f"{prefix}_past"
             else:
-                callback_data = f"cal_day_{day.isoformat()}"
+                callback_data = f"{prefix}_day_{day.isoformat()}"
             
             custom_emoji_id = EMOJI_IDS.get(color_name, {}).get(day_number)
             if custom_emoji_id:

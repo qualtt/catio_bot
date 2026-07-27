@@ -54,8 +54,15 @@ def parse_schedule_date(raw_value: str | None) -> date:
     return date.fromisoformat(raw_value)
 
 
-def parse_admin_datetime(raw_value: str) -> datetime | None:
+def parse_admin_datetime(raw_value: str, default_date: date | None = None) -> datetime | None:
     value = " ".join(raw_value.split())
+    if default_date:
+        try:
+            time_obj = datetime.strptime(value, "%H:%M").time()
+            return datetime.combine(default_date, time_obj).replace(tzinfo=app_timezone())
+        except ValueError:
+            pass
+
     for date_time_format in ("%Y-%m-%d %H:%M", "%d.%m.%Y %H:%M"):
         try:
             parsed = datetime.strptime(value, date_time_format).replace(tzinfo=ZoneInfo("UTC"))
@@ -276,5 +283,57 @@ async def load_submission_group_posts(session, post: Post) -> list[Post]:
 
 def callback_is_album_control(callback: CallbackQuery, post: Post) -> bool:
     return bool(post.submission_group_id and callback.message and (callback.message.text or callback.message.photo))
+
+
+async def _build_admin_reschedule_calendar(year: int, month: int, return_date: date):
+    from datetime import timedelta
+
+    from bot.content import bot_content
+    from bot.keyboards.calendar import build_month_calendar
+    from db.crud import get_day_availability
+    from db.crud.time_utils import parse_daily_slot_times
+    from db.database import async_session
+
+    today = now_in_app_tz().date()
+    min_date = today
+    max_date = min_date + timedelta(days=365)
+
+    async with async_session() as session:
+        availability = await get_day_availability(session, start_date=min_date, days=365)
+
+    footer_buttons = [
+        (bot_content.button("cancel"), f"admin_cancel_reschedule_{return_date.isoformat()}")
+    ]
+    
+    return build_month_calendar(
+        year=year,
+        month=month,
+        availability=availability,
+        min_date=min_date,
+        max_date=max_date,
+        max_slots=len(parse_daily_slot_times()),
+        footer_buttons=footer_buttons,
+        prefix="admin_cal"
+    )
+
+
+async def show_admin_reschedule_calendar(
+    message_or_callback,
+    post_id: int,
+    return_date: date,
+    year: int | None = None,
+    month: int | None = None,
+):
+    today = now_in_app_tz().date()
+    if year is None or month is None:
+        year, month = today.year, today.month
+
+    markup = await _build_admin_reschedule_calendar(year, month, return_date)
+    text = f"Выберите дату для публикации #{post_id} (вы можете выбрать любой день):"
+    
+    if hasattr(message_or_callback, "message") and message_or_callback.message:
+        await message_or_callback.message.edit_text(text, reply_markup=markup)
+    else:
+        await message_or_callback.answer(text, reply_markup=markup)
 
 

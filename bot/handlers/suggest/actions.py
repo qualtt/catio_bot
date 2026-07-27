@@ -398,7 +398,7 @@ async def _send_single_submission_to_admin(
             duplicate_of_photo_id=post.duplicate_of_photo_id,
             duplicate_distance=post.duplicate_distance,
         ),
-        reply_markup=get_admin_approval_kb(post.id),
+        reply_markup=get_admin_approval_kb(post.id, post.user_id),
     )
     await _send_duplicate_original_to_admin(bot, post=post)
 

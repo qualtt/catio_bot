@@ -32,6 +32,10 @@ async def _process_single_photo_message(message: Message, state: FSMContext, bot
 
     try:
         user = await _get_or_create_submission_user(message)
+        if user.is_muted:
+            await message.answer(bot_content.message("user_muted"))
+            return
+            
         item = await _store_submitted_photo(bot, file_id=file_id, file_unique_id=file_unique_id)
     except Exception:
         logger.exception("Failed to store submitted photo")
@@ -61,6 +65,10 @@ async def _process_album_messages(messages: list[Message], state: FSMContext, bo
 
     try:
         user = await _get_or_create_submission_user(messages[0])
+        if user.is_muted:
+            await messages[0].answer(bot_content.message("user_muted"))
+            return
+            
         items = []
         for message in messages:
             photo_size = message.photo[-1]

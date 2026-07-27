@@ -63,7 +63,10 @@ async def handle_admin_reschedule_text(message: Message, state: FSMContext):
     data = await state.get_data()
     post_id = int(data.get("post_id") or 0)
     return_date = parse_schedule_date(data.get("return_date"))
-    new_schedule = parse_admin_datetime(message.text or "")
+    selected_date_str = data.get("selected_reschedule_date")
+    default_date = date.fromisoformat(selected_date_str) if selected_date_str else None
+    
+    new_schedule = parse_admin_datetime(message.text or "", default_date)
     if new_schedule is None:
         await message.answer(
             bot_content.message("admin_reschedule_invalid"),

@@ -132,7 +132,7 @@ async def edit_admin_animal_change_result(
         chat_id=chat_id,
         message_id=message_id,
         caption=admin_post_caption(post),
-        reply_markup=get_admin_approval_kb(post.id),
+        reply_markup=get_admin_approval_kb(post.id, post.user_id),
     )
 
 

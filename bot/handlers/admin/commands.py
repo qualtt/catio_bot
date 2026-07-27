@@ -47,6 +47,23 @@ async def admin_stats_command(message: Message):
     await message.answer(text, reply_markup=get_admin_menu_kb())
 
 
+@admin_router.message(Command("muted"))
+async def admin_muted_command(message: Message):
+    if not is_admin_user(message.from_user.id):
+        await message.answer(bot_content.message("not_admin"))
+        return
+    async with async_session() as session:
+        from db.crud import get_muted_users
+        users = await get_muted_users(session)
+        
+    if not users:
+        await message.answer("Нет замученных пользователей.")
+        return
+        
+    from bot.keyboards.inline import get_muted_users_kb
+    await message.answer("Список замученных пользователей:", reply_markup=get_muted_users_kb(users))
+
+
 async def _start_broadcast_prompt(target: Message, state: FSMContext) -> None:
     await state.set_state(AdminState.waiting_for_broadcast_text)
     await state.set_data({})

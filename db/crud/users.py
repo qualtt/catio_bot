@@ -46,3 +46,26 @@ async def get_top_users_by_posts(session: AsyncSession, limit: int = 10) -> list
     return list(await session.execute(stmt))
 
 
+async def mute_user(session: AsyncSession, user_id: int) -> None:
+    stmt = select(User).where(User.id == user_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    if user:
+        user.is_muted = True
+        await session.commit()
+
+
+async def unmute_user(session: AsyncSession, user_id: int) -> None:
+    stmt = select(User).where(User.id == user_id)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    if user:
+        user.is_muted = False
+        await session.commit()
+
+
+async def get_muted_users(session: AsyncSession) -> list[User]:
+    stmt = select(User).where(User.is_muted == True).order_by(User.id.desc())
+    return list((await session.execute(stmt)).scalars())
+
+

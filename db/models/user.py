@@ -22,6 +22,7 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(255))
     full_name: Mapped[str | None] = mapped_column(String(255))
     score: Mapped[int] = mapped_column(default=0)
+    is_muted: Mapped[bool] = mapped_column(default=False)
 
     posts: Mapped[list["Post"]] = relationship(back_populates="user")
     score_events: Mapped[list["ScoreEvent"]] = relationship(back_populates="user")

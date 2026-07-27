@@ -57,7 +57,10 @@ from .time_utils import (
 )
 from .users import (
     add_user_score,
+    get_muted_users,
     get_or_create_user,
     get_top_users,
     get_top_users_by_posts,
+    mute_user,
+    unmute_user,
 )

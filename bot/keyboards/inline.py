@@ -78,12 +78,13 @@ def get_schedule_choice_kb(*, auto_date: str | None = None) -> InlineKeyboardMar
     builder.adjust(1)
     return builder.as_markup()
 
-def get_admin_approval_kb(post_id: int) -> InlineKeyboardMarkup:
+def get_admin_approval_kb(post_id: int, user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("approve"), callback_data=f"admin_approve_{post_id}")
     builder.button(text=bot_content.button("reject"), callback_data=f"admin_reject_{post_id}")
     builder.button(text=bot_content.button("change_animal"), callback_data=f"admin_change_{post_id}")
-    builder.adjust(2, 1)
+    builder.button(text="🔇 Замутить", callback_data=f"admin_mute_{user_id}")
+    builder.adjust(2, 1, 1)
     return builder.as_markup()
 
 
@@ -101,6 +102,15 @@ def get_admin_broadcast_confirm_kb() -> InlineKeyboardMarkup:
     builder.button(text=bot_content.button("admin_broadcast_send"), callback_data="admin_broadcast_send")
     builder.button(text=bot_content.button("admin_broadcast_cancel"), callback_data="admin_broadcast_cancel")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def get_muted_users_kb(users) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user in users:
+        name = user.full_name or user.username or f"ID: {user.id}"
+        builder.button(text=f"🔊 Размутить {name}", callback_data=f"admin_unmute_{user.id}")
+    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -207,6 +217,9 @@ def get_admin_album_view_kb(posts, current_post) -> InlineKeyboardMarkup:
     row_sizes = [2] if len(ordered_posts) > 1 else []
     if current_post.status == PostStatus.PENDING:
         row_sizes.append(3)
+        builder.button(text="🔇 Замутить", callback_data=f"admin_mute_{current_post.user_id}")
+        row_sizes.append(1)
+        
     if row_sizes:
         builder.adjust(*row_sizes)
     return builder.as_markup()
@@ -237,6 +250,11 @@ def get_admin_album_kb(posts) -> InlineKeyboardMarkup | None:
             callback_data=f"admin_change_{post.id}",
         )
     builder.adjust(*([3] * len(pending_posts)))
+    builder.button(text="🔇 Замутить", callback_data=f"admin_mute_{posts[0].user_id}")
+    
+    # Adust again to put the mute button on its own row
+    row_sizes = [3] * len(pending_posts) + [1]
+    builder.adjust(*row_sizes)
     return builder.as_markup()
 
 
