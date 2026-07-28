@@ -63,7 +63,7 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
         url = f"{base_url}/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, proxy=config.GEMINI_PROXY_URL, timeout=aiohttp.ClientTimeout(total=15)) as response:
+            async with session.post(url, json=payload, proxy=config.GEMINI_PROXY_URL, timeout=aiohttp.ClientTimeout(total=60)) as response:
                 if response.status == 429:
                     logger.warning("Gemini API rate limit exceeded")
                     return None
