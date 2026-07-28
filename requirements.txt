@@ -10,3 +10,4 @@ boto3==1.35.99
 Pillow==10.4.0
 Pyrogram==2.0.106
 tgcrypto==1.2.5
+aiohttp-socks==0.9.1

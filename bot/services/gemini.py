@@ -63,8 +63,16 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
         base_url = config.GEMINI_BASE_URL.rstrip("/")
         url = f"{base_url}/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, proxy=config.GEMINI_PROXY_URL, timeout=aiohttp.ClientTimeout(total=60)) as response:
+        session_kwargs = {}
+        post_proxy = config.GEMINI_PROXY_URL
+        
+        if config.GEMINI_PROXY_URL and config.GEMINI_PROXY_URL.startswith("socks5"):
+            from aiohttp_socks import ProxyConnector
+            session_kwargs["connector"] = ProxyConnector.from_url(config.GEMINI_PROXY_URL)
+            post_proxy = None  # aiohttp_socks uses connector, not proxy param
+        
+        async with aiohttp.ClientSession(**session_kwargs) as session:
+            async with session.post(url, json=payload, proxy=post_proxy, timeout=aiohttp.ClientTimeout(total=60)) as response:
                 if response.status == 429:
                     logger.warning("Gemini API rate limit exceeded")
                     return None
