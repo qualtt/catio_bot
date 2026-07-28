@@ -42,6 +42,7 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
         
         payload = {
             "contents": [{
+                "role": "user",
                 "parts": [
                     {"text": prompt},
                     {
