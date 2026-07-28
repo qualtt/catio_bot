@@ -3,6 +3,7 @@ import logging
 from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.redis import RedisStorage
 
 from bot.config import config
@@ -16,7 +17,7 @@ from bot.services.publisher import publisher_loop
 logging.basicConfig(level=logging.INFO)
 
 async def main():
-    bot = Bot(token=config.BOT_TOKEN)
+    bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     storage = RedisStorage.from_url(f"redis://{config.REDIS_HOST}:{config.REDIS_PORT}/0")
     dp = Dispatcher(storage=storage)
 
