@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     USERBOT_SESSION_NAME: str = "catio_importer"
     
     GEMINI_API_KEY: str | None = None
+    GEMINI_PROXY_URL: str | None = None
 
     @field_validator("API_ID", mode="before")
     @classmethod
@@ -80,6 +81,7 @@ class Settings(BaseSettings):
         "S3_ACCESS_KEY_ID",
         "S3_SECRET_ACCESS_KEY",
         "GEMINI_API_KEY",
+        "GEMINI_PROXY_URL",
         mode="before",
     )
     @classmethod
