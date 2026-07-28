@@ -166,7 +166,14 @@ async def _send_album_item_prompt(
     index = int(data.get("album_index") or 0)
     item = items[index]
     caption = _album_prompt_text(data, include_warning=include_warning)
-    reply_markup = await get_animal_type_kb(with_album_nav=True)
+    
+    gemini = item.get("gemini")
+    if gemini and not item.get("gemini_rejected"):
+        from bot.keyboards.inline import get_gemini_confirmation_kb
+        reply_markup = get_gemini_confirmation_kb(is_valid=gemini.get("is_valid", False), with_album_nav=True)
+    else:
+        reply_markup = await get_animal_type_kb(with_album_nav=True)
+        
     prompt_chat_id = data.get("album_prompt_chat_id")
     prompt_message_id = data.get("album_prompt_message_id")
     if prompt_chat_id and prompt_message_id:
@@ -557,4 +564,4 @@ async def _save_album_schedule_and_continue(
 
 
 
-__all__ = ['logger', '_select_single_animal_type', '_ask_single_schedule', '_get_or_create_submission_user', '_store_submitted_photo', '_set_better_duplicate_match', '_annotate_album_internal_duplicates', '_send_album_item_prompt', '_edit_album_prompt_caption', '_save_album_animal_type', '_continue_album_or_ask_schedule', '_handle_album_animal_selected', '_handle_album_custom_animal_type', '_album_selected_cat_dates', '_find_next_auto_slot', '_allocate_album_schedule_slots', '_create_album_posts', '_send_single_submission_to_admin', '_send_duplicate_original_to_admin', '_send_album_submission_to_admin', '_first_album_schedule_conflict', '_finalize_album_submission', '_save_album_schedule_and_continue']
+__all__ = ['_album_selected_cat_dates', '_allocate_album_schedule_slots', '_annotate_album_internal_duplicates', '_ask_single_schedule', '_continue_album_or_ask_schedule', '_create_album_posts', '_edit_album_prompt_caption', '_finalize_album_submission', '_find_next_auto_slot', '_first_album_schedule_conflict', '_get_or_create_submission_user', '_handle_album_animal_selected', '_handle_album_custom_animal_type', '_save_album_animal_type', '_save_album_schedule_and_continue', '_select_single_animal_type', '_send_album_item_prompt', '_send_album_submission_to_admin', '_send_duplicate_original_to_admin', '_send_single_submission_to_admin', '_set_better_duplicate_match', '_store_submitted_photo', 'logger']

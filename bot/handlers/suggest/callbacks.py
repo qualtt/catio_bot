@@ -45,6 +45,83 @@ async def select_animal_type(callback: CallbackQuery, state: FSMContext, bot: Bo
     await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
 
 
+@suggest_router.callback_query(F.data == "gemini_reject")
+async def handle_gemini_reject(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    message_id = callback.message.message_id
+    single = _get_single_submission(message_id)
+    if single:
+        single["gemini_rejected"] = True
+        from bot.keyboards.inline import get_animal_type_kb
+
+        from .helpers import _single_photo_prompt_text
+        await _edit_callback_prompt(
+            callback,
+            text=_single_photo_prompt_text(single),
+            reply_markup=await get_animal_type_kb()
+        )
+        return
+
+    data = await state.get_data()
+    if _is_album_submission(data):
+        items = _album_items(data)
+        index = int(data.get("album_index") or 0)
+        if items:
+            items[index]["gemini_rejected"] = True
+            await state.update_data(album_items=items)
+            from .actions import _send_album_item_prompt
+            await _send_album_item_prompt(bot, callback.message.chat.id, state, edit=True)
+            await callback.answer()
+            return
+            
+    await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+
+
+@suggest_router.callback_query(F.data == "gemini_confirm")
+async def handle_gemini_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    message_id = callback.message.message_id
+    single = _get_single_submission(message_id)
+    
+    if single:
+        gemini_data = single.get("gemini")
+        if gemini_data:
+            if gemini_data.get("is_valid"):
+                await select_animal_type(callback, state, bot, gemini_data.get("animal"))
+            else:
+                _finish_single_submission(message_id)
+                await callback.message.delete()
+                await callback.answer("Фото отклонено.")
+        return
+
+    data = await state.get_data()
+    if _is_album_submission(data):
+        items = _album_items(data)
+        index = int(data.get("album_index") or 0)
+        if items:
+            gemini_data = items[index].get("gemini")
+            if not gemini_data:
+                await callback.answer()
+                return
+            if gemini_data.get("is_valid"):
+                await select_animal_type(callback, state, bot, gemini_data.get("animal"))
+            else:
+                del items[index]
+                if not items:
+                    await callback.message.delete()
+                    await state.clear()
+                    await callback.answer("Все фото отклонены.")
+                    return
+                # Adjust index if necessary
+                if index >= len(items):
+                    index = len(items) - 1
+                await state.update_data(album_items=items, album_index=index)
+                from .actions import _send_album_item_prompt
+                await _send_album_item_prompt(bot, callback.message.chat.id, state, edit=True)
+                await callback.answer("Фото исключено из альбома.")
+        return
+
+    await callback.answer(bot_content.message("post_processed_or_missing"), show_alert=True)
+
+
 @suggest_router.callback_query(F.data == "animal_other")
 async def handle_other_animal_type(callback: CallbackQuery, state: FSMContext):
     single = _get_single_submission(callback.message.message_id)
@@ -514,4 +591,4 @@ async def handle_album_auto_remaining(callback: CallbackQuery, state: FSMContext
 
 
 
-__all__ = ['logger', 'select_animal_type', 'handle_other_animal_type', 'handle_animal_type_back', 'handle_custom_animal_type_button', 'handle_album_animal_navigation', 'handle_animal_type', 'handle_extra_animal_type', 'handle_schedule_auto', 'handle_schedule_manual', 'handle_calendar_nav', 'handle_calendar_day', 'handle_manual_time', 'handle_album_auto_current', 'handle_album_auto_remaining']
+__all__ = ['handle_album_animal_navigation', 'handle_album_auto_current', 'handle_album_auto_remaining', 'handle_animal_type', 'handle_animal_type_back', 'handle_calendar_day', 'handle_calendar_nav', 'handle_custom_animal_type_button', 'handle_extra_animal_type', 'handle_manual_time', 'handle_other_animal_type', 'handle_schedule_auto', 'handle_schedule_manual', 'logger', 'select_animal_type']

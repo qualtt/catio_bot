@@ -33,8 +33,8 @@ from db.database import async_session
 from db.models.post import Post, PostStatus
 
 from .actions import *
-from .helpers import *
 from .commands import _start_broadcast_prompt
+from .helpers import *
 from .router import AdminState, admin_router
 
 logger = logging.getLogger(__name__)
@@ -119,8 +119,8 @@ async def handle_admin_broadcast_send(callback: CallbackQuery, state: FSMContext
     audience = data.get("broadcast_audience", "all")
     target_users = None
     if audience == "unvoted":
-        from db.crud import get_users_not_voted_in_tournament
         from bot.services.tournaments.queries import get_current_tournament
+        from db.crud import get_users_not_voted_in_tournament
         async with async_session() as session:
             current_tournament = await get_current_tournament(session)
             if current_tournament:

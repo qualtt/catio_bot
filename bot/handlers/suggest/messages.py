@@ -55,4 +55,4 @@ async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bo
 
 
 
-__all__ = ['logger', 'handle_photo', 'handle_single_custom_animal_type', 'handle_custom_animal_type']
+__all__ = ['handle_custom_animal_type', 'handle_photo', 'handle_single_custom_animal_type', 'logger']

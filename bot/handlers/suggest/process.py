@@ -9,7 +9,9 @@ from aiogram.types import Message
 from bot.content import bot_content
 from bot.keyboards.inline import (
     get_animal_type_kb,
+    get_gemini_confirmation_kb,
 )
+from bot.services.gemini import analyze_photo
 
 from .actions import *
 from .buffer import *
@@ -37,6 +39,7 @@ async def _process_single_photo_message(message: Message, state: FSMContext, bot
             return
             
         item = await _store_submitted_photo(bot, file_id=file_id, file_unique_id=file_unique_id)
+        gemini_result = await analyze_photo(bot, file_id)
     except Exception:
         logger.exception("Failed to store submitted photo")
         await message.answer(bot_content.message("photo_storage_failed"))
@@ -49,10 +52,17 @@ async def _process_single_photo_message(message: Message, state: FSMContext, bot
         "duplicate_of_photo_id": item.get("duplicate_of_photo_id"),
         "duplicate_distance": item.get("duplicate_distance"),
         "stage": "animal",
+        "gemini": gemini_result,
+        "gemini_rejected": False,
     }
+    if gemini_result:
+        reply_markup = get_gemini_confirmation_kb(is_valid=gemini_result.get("is_valid", False))
+    else:
+        reply_markup = await get_animal_type_kb()
+
     sent = await message.reply(
         _single_photo_prompt_text(submission_data),
-        reply_markup=await get_animal_type_kb(),
+        reply_markup=reply_markup,
     )
     _set_single_submission(sent.message_id, submission_data)
 
@@ -72,13 +82,22 @@ async def _process_album_messages(messages: list[Message], state: FSMContext, bo
         items = []
         for message in messages:
             photo_size = message.photo[-1]
-            items.append(
-                await _store_submitted_photo(
-                    bot,
-                    file_id=photo_size.file_id,
-                    file_unique_id=photo_size.file_unique_id,
-                )
+            item = await _store_submitted_photo(
+                bot,
+                file_id=photo_size.file_id,
+                file_unique_id=photo_size.file_unique_id,
             )
+            gemini_result = await analyze_photo(bot, photo_size.file_id)
+            
+            items.append({
+                "file_id": photo_size.file_id,
+                "photo_id": item["photo_id"],
+                "duplicate_of_photo_id": item.get("duplicate_of_photo_id"),
+                "duplicate_distance": item.get("duplicate_distance"),
+                "stage": "animal",
+                "gemini": gemini_result,
+                "gemini_rejected": False,
+            })
     except Exception:
         logger.exception("Failed to store submitted album")
         await messages[0].answer(bot_content.message("photo_storage_failed"))
@@ -130,4 +149,4 @@ async def _collect_album_message(message: Message, state: FSMContext, bot: Bot) 
 
 
 
-__all__ = ['logger', '_album_lock', '_process_single_photo_message', '_process_album_messages', '_flush_album_buffer_after_delay', '_collect_album_message']
+__all__ = ['_album_lock', '_collect_album_message', '_flush_album_buffer_after_delay', '_process_album_messages', '_process_single_photo_message', 'logger']

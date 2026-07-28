@@ -1,9 +1,9 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.models.photo_tournament import PhotoTournamentVote
 from db.models.post import Post, PostStatus
 from db.models.user import User
-from db.models.photo_tournament import PhotoTournamentVote
 
 
 async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str | None = None, full_name: str | None = None) -> User:

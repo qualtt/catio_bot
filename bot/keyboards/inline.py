@@ -34,6 +34,20 @@ def _add_album_nav_buttons(builder: InlineKeyboardBuilder, *, with_album_nav: bo
     builder.button(text=bot_content.button("album_next"), callback_data="album_next")
 
 
+def get_gemini_confirmation_kb(*, is_valid: bool, with_album_nav: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if is_valid:
+        builder.button(text=bot_content.button("gemini_yes"), callback_data="gemini_confirm")
+    else:
+        builder.button(text=bot_content.button("gemini_cancel"), callback_data="gemini_confirm")
+        
+    builder.button(text=bot_content.button("gemini_no"), callback_data="gemini_reject")
+    _add_album_nav_buttons(builder, with_album_nav=with_album_nav)
+    
+    builder.adjust(2, *([2] if with_album_nav else []))
+    return builder.as_markup()
+
+
 async def get_animal_type_kb(*, with_album_nav: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     async with async_session() as session:
