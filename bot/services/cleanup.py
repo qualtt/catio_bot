@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from bot.services.photo_storage import delete_photos_batch
 from db.crud.photos import get_abandoned_photos, delete_photos
-from db.engine import async_session
+from db.database import async_session
 
 logger = logging.getLogger(__name__)
 
