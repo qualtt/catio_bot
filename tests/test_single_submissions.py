@@ -27,18 +27,20 @@ class FakeCallback:
         self.answers.append({"text": text, "show_alert": show_alert})
 
 
+from bot.handlers.suggest.buffer import _single_submissions, _custom_animal_prompt_by_user, _set_single_submission
+
 @pytest.fixture(autouse=True)
 def clear_single_submissions():
-    suggest._single_submissions.clear()
-    suggest._custom_animal_prompt_by_user.clear()
+    _single_submissions.clear()
+    _custom_animal_prompt_by_user.clear()
     yield
-    suggest._single_submissions.clear()
-    suggest._custom_animal_prompt_by_user.clear()
+    _single_submissions.clear()
+    _custom_animal_prompt_by_user.clear()
 
 
 def test_single_submissions_are_keyed_by_prompt_message_id():
-    suggest._set_single_submission(101, {"file_id": "first", "photo_id": 1})
-    suggest._set_single_submission(202, {"file_id": "last", "photo_id": 2})
+    _set_single_submission(101, {"file_id": "first", "photo_id": 1})
+    _set_single_submission(202, {"file_id": "last", "photo_id": 2})
 
     assert suggest._get_single_submission(101)["file_id"] == "first"
     assert suggest._get_single_submission(202)["file_id"] == "last"
@@ -46,7 +48,7 @@ def test_single_submissions_are_keyed_by_prompt_message_id():
 
 @pytest.mark.asyncio
 async def test_select_animal_type_uses_matching_prompt_message():
-    suggest._set_single_submission(
+    _set_single_submission(
         101,
         {
             "file_id": "first",
@@ -55,7 +57,7 @@ async def test_select_animal_type_uses_matching_prompt_message():
             "stage": "animal",
         },
     )
-    suggest._set_single_submission(
+    _set_single_submission(
         202,
         {
             "file_id": "last",
@@ -82,8 +84,8 @@ async def test_select_animal_type_uses_matching_prompt_message():
 
 @pytest.mark.asyncio
 async def test_finish_single_submission_removes_only_target_entry():
-    suggest._set_single_submission(101, {"file_id": "first", "user_id": 7})
-    suggest._set_single_submission(202, {"file_id": "last", "user_id": 7})
+    _set_single_submission(101, {"file_id": "first", "user_id": 7})
+    _set_single_submission(202, {"file_id": "last", "user_id": 7})
     suggest._custom_animal_prompt_by_user[7] = 101
 
     finished = suggest._finish_single_submission(101)

@@ -54,3 +54,5 @@ async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bo
     await message.answer(bot_content.message("post_processed_or_missing"))
 
 
+
+__all__ = ['logger', 'handle_photo', 'handle_single_custom_animal_type', 'handle_custom_animal_type']

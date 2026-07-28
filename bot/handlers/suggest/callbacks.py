@@ -513,3 +513,5 @@ async def handle_album_auto_remaining(callback: CallbackQuery, state: FSMContext
     await callback.answer()
 
 
+
+__all__ = ['logger', 'select_animal_type', 'handle_other_animal_type', 'handle_animal_type_back', 'handle_custom_animal_type_button', 'handle_album_animal_navigation', 'handle_animal_type', 'handle_extra_animal_type', 'handle_schedule_auto', 'handle_schedule_manual', 'handle_calendar_nav', 'handle_calendar_day', 'handle_manual_time', 'handle_album_auto_current', 'handle_album_auto_remaining']
