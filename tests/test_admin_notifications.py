@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from bot.handlers.admin import (
+from bot.handlers.admin.helpers import (
     approved_callback_text,
     approved_user_notification_text,
     duplicate_rejection_reason,

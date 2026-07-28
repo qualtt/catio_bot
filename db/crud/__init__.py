@@ -61,6 +61,8 @@ from .users import (
     get_or_create_user,
     get_top_users,
     get_top_users_by_posts,
+    get_tournament_voter_count,
+    get_users_not_voted_in_tournament,
     mute_user,
     unmute_user,
 )

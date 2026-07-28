@@ -92,8 +92,17 @@ def get_admin_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("admin_schedule"), callback_data="admin_schedule_today")
     builder.button(text=bot_content.button("admin_stats"), callback_data="admin_stats")
-    builder.button(text=bot_content.button("admin_broadcast"), callback_data="admin_broadcast")
+    builder.button(text=bot_content.button("admin_broadcast"), callback_data="admin_broadcast_start")
     builder.button(text="Замученные пользователи", callback_data="admin_muted")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_broadcast_audience_kb(has_active_tournament: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📢 Всем пользователям", callback_data="admin_broadcast_all")
+    if has_active_tournament:
+        builder.button(text="🏆 Кто еще не голосовал в турнире", callback_data="admin_broadcast_unvoted")
+    builder.button(text=bot_content.button("cancel"), callback_data="admin_broadcast_cancel")
     builder.adjust(1)
     return builder.as_markup()
 

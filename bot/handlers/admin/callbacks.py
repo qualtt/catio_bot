@@ -40,11 +40,33 @@ from .router import AdminState, admin_router
 logger = logging.getLogger(__name__)
 
 
-@admin_router.callback_query(F.data == "admin_broadcast")
+@admin_router.callback_query(F.data == "admin_broadcast_start")
 async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
+        
+    from bot.keyboards.inline import get_broadcast_audience_kb
+    from bot.services.tournaments.queries import get_current_tournament
+    
+    async with async_session() as session:
+        has_active = (await get_current_tournament(session)) is not None
+        
+    await callback.message.edit_text(
+        "Кому отправить рассылку?",
+        reply_markup=get_broadcast_audience_kb(has_active)
+    )
+    await callback.answer()
+
+@admin_router.callback_query(F.data.in_({"admin_broadcast_all", "admin_broadcast_unvoted"}))
+async def handle_admin_broadcast_audience(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+        
+    audience_type = "all" if callback.data == "admin_broadcast_all" else "unvoted"
+    await state.update_data(broadcast_audience=audience_type)
+    
     await _start_broadcast_prompt(callback.message, state)
     await callback.answer()
 
@@ -94,7 +116,17 @@ async def handle_admin_broadcast_send(callback: CallbackQuery, state: FSMContext
     await callback.answer()
     await callback.message.edit_text(bot_content.message("admin_broadcast_prompt"))
 
-    sent_count, failed_count = await broadcast_message(bot, text)
+    audience = data.get("broadcast_audience", "all")
+    target_users = None
+    if audience == "unvoted":
+        from db.crud import get_users_not_voted_in_tournament
+        from bot.services.tournaments.queries import get_current_tournament
+        async with async_session() as session:
+            current_tournament = await get_current_tournament(session)
+            if current_tournament:
+                target_users = await get_users_not_voted_in_tournament(session, current_tournament.id)
+
+    sent_count, failed_count = await broadcast_message(bot, text, target_users)
     await state.clear()
     await bot.send_message(
         chat_id=callback.from_user.id,

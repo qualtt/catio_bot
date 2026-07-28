@@ -16,9 +16,10 @@ BROADCAST_MESSAGE_LIMIT = 4096
 BROADCAST_SEND_DELAY_SECONDS = 0.05
 
 
-async def broadcast_message(bot: Bot, text: str) -> tuple[int, int]:
-    async with async_session() as session:
-        users = list((await session.execute(select(User).order_by(User.id.asc()))).scalars())
+async def broadcast_message(bot: Bot, text: str, users: list[User] | None = None) -> tuple[int, int]:
+    if users is None:
+        async with async_session() as session:
+            users = list((await session.execute(select(User).order_by(User.id.asc()))).scalars())
 
     sent_count = 0
     failed_count = 0
