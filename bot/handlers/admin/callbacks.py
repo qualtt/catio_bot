@@ -26,7 +26,6 @@ from db.crud import (
     ensure_animal_type,
     get_animal_type_name,
     get_next_auto_slot,
-    load_post,
     mute_user,
     now_in_app_tz,
 )
