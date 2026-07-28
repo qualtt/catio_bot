@@ -102,7 +102,7 @@ def get_broadcast_audience_kb(has_active_tournament: bool) -> InlineKeyboardMark
     builder.button(text="📢 Всем пользователям", callback_data="admin_broadcast_all")
     if has_active_tournament:
         builder.button(text="🏆 Кто еще не голосовал в турнире", callback_data="admin_broadcast_unvoted")
-    builder.button(text=bot_content.button("cancel"), callback_data="admin_broadcast_cancel")
+    builder.button(text=bot_content.button("admin_broadcast_cancel"), callback_data="admin_broadcast_cancel")
     builder.adjust(1)
     return builder.as_markup()
 
