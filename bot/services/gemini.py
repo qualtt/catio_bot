@@ -57,7 +57,9 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
             }
         }
         
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={config.GEMINI_API_KEY}"
+        # Strip trailing slash if present
+        base_url = config.GEMINI_BASE_URL.rstrip("/")
+        url = f"{base_url}/v1beta/models/gemini-3.6-flash:generateContent?key={config.GEMINI_API_KEY}"
         
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload, proxy=config.GEMINI_PROXY_URL, timeout=aiohttp.ClientTimeout(total=15)) as response:

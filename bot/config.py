@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     
     GEMINI_API_KEY: str | None = None
     GEMINI_PROXY_URL: str | None = None
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com"
 
     @field_validator("API_ID", mode="before")
     @classmethod
@@ -82,6 +83,7 @@ class Settings(BaseSettings):
         "S3_SECRET_ACCESS_KEY",
         "GEMINI_API_KEY",
         "GEMINI_PROXY_URL",
+        "GEMINI_BASE_URL",
         mode="before",
     )
     @classmethod
