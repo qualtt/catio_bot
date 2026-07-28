@@ -63,7 +63,11 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
         base_url = config.GEMINI_BASE_URL.rstrip("/")
         url = f"{base_url}/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
         
-        session_kwargs = {}
+        session_kwargs = {
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        }
         post_proxy = config.GEMINI_PROXY_URL
         
         if config.GEMINI_PROXY_URL and config.GEMINI_PROXY_URL.startswith("socks5"):
