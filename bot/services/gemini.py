@@ -80,10 +80,17 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
         
         # Validate returned animal
         valid_options = options_str.split("/")
-        if result.get("is_valid") and result.get("animal") not in valid_options:
-            logger.warning("Gemini returned invalid animal type: %s", result.get("animal"))
-            result["is_valid"] = False
-            result["reason"] = f"Нейросеть не смогла определить тип из списка ({result.get('animal')})."
+        valid_options_lower = [opt.lower() for opt in valid_options]
+        if result.get("is_valid"):
+            animal = result.get("animal", "")
+            if animal.lower() not in valid_options_lower:
+                logger.warning("Gemini returned invalid animal type: %s", animal)
+                result["is_valid"] = False
+                result["reason"] = f"Нейросеть не смогла определить тип из списка ({animal})."
+            else:
+                # Сохраняем оригинальный регистр из базы данных
+                idx = valid_options_lower.index(animal.lower())
+                result["animal"] = valid_options[idx]
             
         return result
     except Exception:
