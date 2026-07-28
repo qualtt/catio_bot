@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     GEMINI_PROXY_URL: str | None = None
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com"
+    GEMINI_MODEL: str = "gemini-3.6-flash"
 
     @field_validator("API_ID", mode="before")
     @classmethod
