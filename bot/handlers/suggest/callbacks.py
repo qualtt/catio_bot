@@ -277,13 +277,14 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
             await session.refresh(post, ["duplicate_of_photo"])
 
         _finish_single_submission(callback.message.message_id)
-        await _edit_message_text_or_caption(
-            callback.message,
-            bot_content.message(
-                "photo_submitted_auto",
-                schedule=_format_schedule(schedule_time),
-            ),
+        success_text = bot_content.message(
+            "photo_submitted_auto",
+            schedule=_format_schedule(schedule_time),
         )
+        ai_comment = (single.get("gemini") or {}).get("comment")
+        if ai_comment:
+            success_text += f"\n\n💬 Комментарий ИИ: {ai_comment}"
+        await _edit_message_text_or_caption(callback.message, success_text)
         await _send_single_submission_to_admin(
             bot,
             post=post,
@@ -490,13 +491,14 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
         await session.refresh(post, ["duplicate_of_photo"])
 
     _finish_single_submission(callback.message.message_id)
-    await _edit_message_text_or_caption(
-        callback.message,
-        bot_content.message(
-            "photo_submitted_manual",
-            schedule=_format_schedule(schedule_time),
-        ),
+    success_text = bot_content.message(
+        "photo_submitted_manual",
+        schedule=_format_schedule(schedule_time),
     )
+    ai_comment = (single.get("gemini") or {}).get("comment")
+    if ai_comment:
+        success_text += f"\n\n💬 Комментарий ИИ: {ai_comment}"
+    await _edit_message_text_or_caption(callback.message, success_text)
 
     await _send_single_submission_to_admin(
         bot,
