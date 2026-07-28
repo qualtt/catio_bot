@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,8 +112,13 @@ async def find_duplicate_photo(
     if await photo_has_known_usage(session, photo.id):
         return DuplicatePhotoMatch(photo_id=photo.id, distance=0, reason="exact")
 
+    has_usage = or_(
+        select(Post.id).where(Post.photo_id == Photo.id).correlate(Photo).exists(),
+        select(ChannelHistory.id).where(ChannelHistory.photo_id == Photo.id).correlate(Photo).exists()
+    )
+
     if photo.sha256:
-        stmt = select(Photo).where(Photo.id != photo.id, Photo.sha256 == photo.sha256)
+        stmt = select(Photo).where(Photo.id != photo.id, Photo.sha256 == photo.sha256, has_usage)
         exact = (await session.execute(stmt)).scalar_one_or_none()
         if exact:
             return DuplicatePhotoMatch(photo_id=exact.id, distance=0, reason="exact")
@@ -125,6 +130,7 @@ async def find_duplicate_photo(
     stmt = select(Photo.id, Photo.perceptual_hash).where(
         Photo.id != photo.id,
         Photo.perceptual_hash.is_not(None),
+        has_usage
     )
     result = await session.execute(stmt)
     best_match: DuplicatePhotoMatch | None = None
