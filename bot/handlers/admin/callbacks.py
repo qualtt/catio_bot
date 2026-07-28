@@ -34,6 +34,7 @@ from db.models.post import Post, PostStatus
 
 from .actions import *
 from .helpers import *
+from .commands import _start_broadcast_prompt
 from .router import AdminState, admin_router
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,25 @@ async def handle_admin_broadcast_cancel(callback: CallbackQuery, state: FSMConte
         return
     await state.clear()
     await callback.message.edit_text(bot_content.message("admin_broadcast_cancelled"))
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data == "admin_muted")
+async def handle_admin_muted_callback(callback: CallbackQuery):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+        
+    async with async_session() as session:
+        from db.crud import get_muted_users
+        users = await get_muted_users(session)
+        
+    if not users:
+        await callback.answer("Нет замученных пользователей.", show_alert=True)
+        return
+        
+    from bot.keyboards.inline import get_muted_users_kb
+    await callback.message.answer("Список замученных пользователей:", reply_markup=get_muted_users_kb(users))
     await callback.answer()
 
 
