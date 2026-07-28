@@ -54,6 +54,10 @@ def _album_prompt_text(data: dict, *, include_warning: bool = False) -> str:
             text = bot_content.message("gemini_confirm_valid", animal=gemini.get("animal"), reason=gemini.get("reason"))
         else:
             text = bot_content.message("gemini_confirm_invalid", reason=gemini.get("reason"))
+        
+        if gemini.get("comment"):
+            text += f"\n\n💬 Комментарий ИИ: {gemini.get('comment')}"
+            
         text = f"Фото {index + 1} из {len(items)}.\n\n" + text
     else:
         text = bot_content.message(
@@ -77,10 +81,11 @@ def _single_photo_prompt_text(data: dict) -> str:
     if gemini and not data.get("gemini_rejected"):
         if gemini.get("is_valid"):
             text = bot_content.message("gemini_confirm_valid", animal=gemini.get("animal"), reason=gemini.get("reason"))
-            if gemini.get("comment"):
-                text += f"\n\n💬 Комментарий ИИ: {gemini.get('comment')}"
         else:
             text = bot_content.message("gemini_confirm_invalid", reason=gemini.get("reason"))
+            
+        if gemini.get("comment"):
+            text += f"\n\n💬 Комментарий ИИ: {gemini.get('comment')}"
     else:
         text = bot_content.message("ask_animal_type")
         
