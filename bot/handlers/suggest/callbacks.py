@@ -291,6 +291,7 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
             animal_type=animal_type,
             schedule_time=schedule_time,
             author=author,
+            ai_comment=(single.get("gemini") or {}).get("comment"),
         )
         await callback.answer()
         return
@@ -504,6 +505,7 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
         animal_type=animal_type,
         schedule_time=schedule_time,
         author=author,
+        ai_comment=(single.get("gemini") or {}).get("comment"),
     )
     await callback.answer()
 

@@ -49,14 +49,18 @@ def submission_caption(
     author: str,
     duplicate_of_photo_id: int | None = None,
     duplicate_distance: int | None = None,
+    ai_comment: str | None = None,
 ) -> str:
-    return bot_content.message(
+    text = bot_content.message(
         "admin_new_submission_caption",
         animal_type=animal_type,
         schedule=schedule,
         author=author,
         duplicate_note=duplicate_note(duplicate_of_photo_id, duplicate_distance),
     )
+    if ai_comment:
+        text += f"\n\n💬 Комментарий ИИ: {ai_comment}"
+    return text
 
 
 def album_submission_photo_caption(post, number: int) -> str:

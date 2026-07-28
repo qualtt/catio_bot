@@ -392,6 +392,7 @@ async def _send_single_submission_to_admin(
     animal_type: str,
     schedule_time: datetime,
     author: str,
+    ai_comment: str | None = None,
 ) -> None:
     await bot.send_photo(
         chat_id=config.ADMIN_ID,
@@ -402,6 +403,7 @@ async def _send_single_submission_to_admin(
             author=author,
             duplicate_of_photo_id=post.duplicate_of_photo_id,
             duplicate_distance=post.duplicate_distance,
+            ai_comment=ai_comment,
         ),
         reply_markup=get_admin_approval_kb(post.id, post.user_id),
     )
