@@ -172,3 +172,18 @@ async def download_photo(*, storage_bucket: str, storage_key: str) -> bytes:
         return response["Body"].read()
 
     return await asyncio.to_thread(download)
+
+
+async def delete_photos_batch(*, storage_bucket: str, storage_keys: list[str]) -> None:
+    if not storage_keys:
+        return
+
+    def delete() -> None:
+        client = _s3_client()
+        for i in range(0, len(storage_keys), 1000):
+            chunk = storage_keys[i:i + 1000]
+            objects = [{"Key": key} for key in chunk]
+            client.delete_objects(Bucket=storage_bucket, Delete={"Objects": objects, "Quiet": True})
+
+    await asyncio.to_thread(delete)
+

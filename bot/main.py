@@ -13,6 +13,7 @@ from bot.handlers.identify import identify_router
 from bot.handlers.suggest import suggest_router
 from bot.handlers.tournament import tournament_router
 from bot.services.publisher import publisher_loop
+from bot.services.cleanup import cleanup_loop
 
 logging.basicConfig(level=logging.INFO)
 
@@ -30,12 +31,15 @@ async def main():
     logging.info("Starting bot...")
     await bot.delete_webhook(drop_pending_updates=True)
     publisher_task = asyncio.create_task(publisher_loop(bot))
+    cleanup_task = asyncio.create_task(cleanup_loop())
     try:
         await dp.start_polling(bot)
     finally:
         publisher_task.cancel()
+        cleanup_task.cancel()
         with suppress(asyncio.CancelledError):
             await publisher_task
+            await cleanup_task
         await storage.close()
         await bot.session.close()
 

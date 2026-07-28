@@ -248,3 +248,39 @@ async def update_photo_metadata(
     return photo
 
 
+
+from datetime import datetime
+from sqlalchemy import update, delete
+
+async def get_abandoned_photos(session: AsyncSession, older_than: datetime) -> list[Photo]:
+    has_usage = or_(
+        select(Post.id).where(
+            Post.photo_id == Photo.id,
+            Post.status.in_([PostStatus.PENDING, PostStatus.APPROVED, PostStatus.PUBLISHED])
+        ).correlate(Photo).exists(),
+        select(ChannelHistory.id).where(ChannelHistory.photo_id == Photo.id).correlate(Photo).exists()
+    )
+
+    stmt = select(Photo).where(Photo.created_at < older_than, ~has_usage)
+    return list((await session.execute(stmt)).scalars().all())
+
+async def delete_photos(session: AsyncSession, photo_ids: list[int]) -> None:
+    if not photo_ids:
+        return
+    
+    await session.execute(
+        update(Post)
+        .where(Post.photo_id.in_(photo_ids), Post.status == PostStatus.REJECTED)
+        .values(photo_id=None)
+    )
+    
+    await session.execute(
+        update(Post)
+        .where(Post.duplicate_of_photo_id.in_(photo_ids))
+        .values(duplicate_of_photo_id=None)
+    )
+    
+    await session.execute(
+        delete(Photo).where(Photo.id.in_(photo_ids))
+    )
+    await session.commit()
