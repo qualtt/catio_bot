@@ -40,7 +40,7 @@ from .router import AdminState, admin_router
 logger = logging.getLogger(__name__)
 
 
-@admin_router.callback_query(F.data == "admin_broadcast_start")
+@admin_router.callback_query(F.data.in_({"admin_broadcast_start", "admin_broadcast"}))
 async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
