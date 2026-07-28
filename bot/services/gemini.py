@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 async def get_animal_prompt_options() -> str:
     from db.crud import get_animal_type_options
     async with async_session() as session:
-        animal_types = await get_animal_type_options(session, is_primary=True)
-    names = [at.name for at in animal_types]
+        primary = await get_animal_type_options(session, is_primary=True)
+        secondary = await get_animal_type_options(session, is_primary=False)
+    names = [at.name for at in primary + secondary]
     return "/".join(names)
 
 
