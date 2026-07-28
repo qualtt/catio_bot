@@ -13,6 +13,8 @@ class AlbumBuffer:
     bot: Bot
     task: asyncio.Task | None = None
 
+_album_buffers: dict[tuple[int, str], AlbumBuffer] = {}
+
 _single_submissions: dict[int, dict] = {}
 
 
@@ -38,4 +40,4 @@ def _finish_single_submission(message_id: int) -> dict | None:
 
 
 
-__all__ = ['AlbumBuffer', '_finish_single_submission', '_get_single_submission', '_set_single_submission']
+__all__ = ['AlbumBuffer', '_finish_single_submission', '_get_single_submission', '_set_single_submission', '_album_buffers', '_custom_animal_prompt_by_user']
