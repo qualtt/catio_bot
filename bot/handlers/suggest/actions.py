@@ -244,7 +244,7 @@ async def _continue_album_or_ask_schedule(
     auto_date = None
     if items:
         async with async_session() as session:
-            next_slot = await get_next_auto_slot(session, animal_type=items[0].animal_type)
+            next_slot = await get_next_auto_slot(session, animal_type=items[0].get("animal_type"))
         auto_date = next_slot.strftime("%d.%m") if next_slot else None
 
     if source_message:
