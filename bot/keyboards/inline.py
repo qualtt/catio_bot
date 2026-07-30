@@ -34,17 +34,39 @@ def _add_album_nav_buttons(builder: InlineKeyboardBuilder, *, with_album_nav: bo
     builder.button(text=bot_content.button("album_next"), callback_data="album_next")
 
 
-def get_gemini_confirmation_kb(*, is_valid: bool, with_album_nav: bool = False) -> InlineKeyboardMarkup:
+def get_photo_dashboard_kb(*, is_album: bool, can_submit: bool, album_length: int = 1) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if is_valid:
-        builder.button(text=bot_content.button("gemini_yes"), callback_data="gemini_confirm")
-    else:
-        builder.button(text=bot_content.button("gemini_cancel"), callback_data="gemini_confirm")
-        
-    builder.button(text=bot_content.button("gemini_no"), callback_data="gemini_reject")
-    _add_album_nav_buttons(builder, with_album_nav=with_album_nav)
     
-    builder.adjust(2, *([2] if with_album_nav else []))
+    auto_points = int(config.SCORE_APPROVED_POST_BASE * (1 + config.SCORE_AUTO_BONUS_PERCENT / 100.0))
+    manual_points = config.SCORE_APPROVED_POST_BASE
+    all_auto_points = auto_points * max(1, album_length)
+
+    # Row 1: Change type
+    builder.button(text=bot_content.button("dash_change_type"), callback_data="dash_change_type")
+    
+    # Row 2: Set auto, Set manual
+    builder.button(text=bot_content.button("dash_set_auto", points=auto_points), callback_data="dash_set_auto")
+    builder.button(text=bot_content.button("dash_set_manual", points=manual_points), callback_data="dash_set_manual")
+    
+    # Row 3: Album Nav
+    if is_album:
+        _add_album_nav_buttons(builder, with_album_nav=True)
+    
+    # Row 4: Submit (or Auto All for albums)
+    if is_album:
+        builder.button(text=bot_content.button("dash_auto_all", points=all_auto_points), callback_data="dash_album_auto_all")
+        if can_submit:
+            builder.button(text=bot_content.button("dash_submit_album"), callback_data="dash_submit_album")
+            builder.adjust(1, 1, 1, 2, 1, 1)
+        else:
+            builder.adjust(1, 1, 1, 2, 1)
+    else:
+        if can_submit:
+            builder.button(text=bot_content.button("dash_submit"), callback_data="dash_submit")
+            builder.adjust(1, 1, 1, 1)
+        else:
+            builder.adjust(1, 1, 1)
+            
     return builder.as_markup()
 
 

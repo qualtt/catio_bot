@@ -2,18 +2,17 @@ import logging
 from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
-from sqlalchemy.exc import IntegrityError
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InputMediaPhoto, Message
+from sqlalchemy.exc import IntegrityError
 
 from bot.config import config
 from bot.content import bot_content
 from bot.keyboards.inline import (
     get_admin_album_view_kb,
     get_admin_approval_kb,
-    get_animal_type_kb,
     get_schedule_choice_kb,
 )
 from bot.services.captions import (
@@ -166,24 +165,29 @@ async def _send_album_item_prompt(
     items = _album_items(data)
     index = int(data.get("album_index") or 0)
     item = items[index]
-    caption = _album_prompt_text(data, include_warning=include_warning)
     
-    gemini = item.get("gemini")
-    if gemini and not item.get("gemini_rejected"):
-        from bot.keyboards.inline import get_gemini_confirmation_kb
-        reply_markup = get_gemini_confirmation_kb(is_valid=gemini.get("is_valid", False), with_album_nav=True)
-    else:
-        reply_markup = await get_animal_type_kb(with_album_nav=True)
+    caption = _photo_dashboard_text(data, is_album=True)
+    if include_warning:
+        caption += "\n\n" + bot_content.message("album_duplicate_warning")
+        
+    from bot.keyboards.inline import get_photo_dashboard_kb
+    can_submit = all(it.get("animal_type") and (it.get("schedule_time") or it.get("is_auto_scheduled")) for it in items)
+    reply_markup = get_photo_dashboard_kb(is_album=True, can_submit=can_submit, album_length=len(items))
         
     prompt_chat_id = data.get("album_prompt_chat_id")
     prompt_message_id = data.get("album_prompt_message_id")
     if prompt_chat_id and prompt_message_id:
-        await bot.edit_message_media(
-            chat_id=prompt_chat_id,
-            message_id=prompt_message_id,
-            media=InputMediaPhoto(media=item["file_id"], caption=caption),
-            reply_markup=reply_markup,
-        )
+        logger.info("Editing album prompt %s to index %s, file_id %s", prompt_message_id, index, item["file_id"])
+        try:
+            await bot.edit_message_media(
+                chat_id=prompt_chat_id,
+                message_id=prompt_message_id,
+                media=InputMediaPhoto(media=item["file_id"], caption=caption),
+                reply_markup=reply_markup,
+            )
+        except TelegramAPIError as e:
+            if "message is not modified" not in str(e).lower():
+                logger.exception("Failed to edit album prompt media")
         return
 
     sent = await bot.send_photo(chat_id=chat_id, photo=item["file_id"], caption=caption, reply_markup=reply_markup)

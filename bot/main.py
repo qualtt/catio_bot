@@ -12,8 +12,10 @@ from bot.handlers.base import base_router
 from bot.handlers.identify import identify_router
 from bot.handlers.suggest import suggest_router
 from bot.handlers.tournament import tournament_router
-from bot.services.publisher import publisher_loop
 from bot.services.cleanup import cleanup_loop
+from bot.services.publisher import publisher_loop
+
+logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,7 +30,7 @@ async def main():
     dp.include_router(suggest_router)
     dp.include_router(admin_router)
 
-    logging.info("Starting bot...")
+    logger.info("Starting bot...")
     await bot.delete_webhook(drop_pending_updates=True)
     publisher_task = asyncio.create_task(publisher_loop(bot))
     cleanup_task = asyncio.create_task(cleanup_loop())

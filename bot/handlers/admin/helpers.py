@@ -58,7 +58,7 @@ def parse_admin_datetime(raw_value: str, default_date: date | None = None) -> da
     value = " ".join(raw_value.split())
     if default_date:
         try:
-            time_obj = datetime.strptime(value, "%H:%M").time()
+            time_obj = datetime.strptime(value, "%H:%M").time()  # noqa: DTZ007
             return datetime.combine(default_date, time_obj).replace(tzinfo=app_timezone())
         except ValueError:
             pass

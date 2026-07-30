@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from sqlalchemy import func, select, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -250,7 +250,9 @@ async def update_photo_metadata(
 
 
 from datetime import datetime
-from sqlalchemy import update, delete
+
+from sqlalchemy import delete, update
+
 
 async def get_abandoned_photos(session: AsyncSession, older_than: datetime) -> list[Photo]:
     has_usage = or_(

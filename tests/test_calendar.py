@@ -4,9 +4,17 @@ from bot.keyboards.calendar import build_month_calendar, slot_marker
 
 
 def test_slot_marker_reflects_availability():
-    assert slot_marker(0, 3) == "⬛️"
-    assert slot_marker(1, 3) == "🟥"
-    assert slot_marker(2, 3) == "🟩"
+    min_date = date(2026, 7, 1)
+    max_date = date(2026, 7, 31)
+    
+    # Outside range
+    assert slot_marker(date(2026, 6, 30), min_date, max_date, 3, 3) == ("⚫️", "black")
+    # No free slots
+    assert slot_marker(date(2026, 7, 15), min_date, max_date, 0, 3) == ("🔴", "red")
+    # Some free slots (ratio < 0.5)
+    assert slot_marker(date(2026, 7, 15), min_date, max_date, 1, 3) == ("🟡", "yellow")
+    # All or most free slots
+    assert slot_marker(date(2026, 7, 15), min_date, max_date, 2, 3) == ("🟢", "green")
 
 
 def test_month_calendar_adds_footer_buttons_without_breaking_grid():

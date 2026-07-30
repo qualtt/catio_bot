@@ -25,7 +25,8 @@ async def test_create_channel_history_item_normalizes_numeric_media_group_id(db_
 
 @pytest.mark.asyncio
 async def test_free_slots_and_day_availability_ignore_rejected_posts(db_session, monkeypatch):
-    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00,14:00")
+    from bot.config import config
+    monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00,14:00")
     target_date = date(2026, 7, 6)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
@@ -66,8 +67,9 @@ async def test_free_slots_and_day_availability_ignore_rejected_posts(db_session,
 
 @pytest.mark.asyncio
 async def test_next_auto_slot_uses_empty_days_not_partially_free_days(db_session, monkeypatch):
-    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
-    monkeypatch.setattr(crud.config, "AUTO_POST_DAYS_AHEAD", 2)
+    from bot.config import config
+    monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    monkeypatch.setattr(config, "AUTO_POST_DAYS_AHEAD", 2)
     tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
@@ -90,7 +92,8 @@ async def test_next_auto_slot_uses_empty_days_not_partially_free_days(db_session
 
 @pytest.mark.asyncio
 async def test_cat_auto_slot_uses_nearest_day_without_cat(db_session, monkeypatch):
-    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    from bot.config import config
+    monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
     tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
@@ -113,7 +116,8 @@ async def test_cat_auto_slot_uses_nearest_day_without_cat(db_session, monkeypatc
 
 @pytest.mark.asyncio
 async def test_cat_auto_slot_skips_days_that_already_have_cat(db_session, monkeypatch):
-    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    from bot.config import config
+    monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
     tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
@@ -136,7 +140,8 @@ async def test_cat_auto_slot_skips_days_that_already_have_cat(db_session, monkey
 
 @pytest.mark.asyncio
 async def test_non_cat_auto_slot_can_share_day_with_cat(db_session, monkeypatch):
-    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    from bot.config import config
+    monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
     tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
@@ -159,7 +164,8 @@ async def test_non_cat_auto_slot_can_share_day_with_cat(db_session, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_non_cat_auto_slot_skips_non_empty_days_without_cat(db_session, monkeypatch):
-    monkeypatch.setattr(crud.config, "DAILY_SLOT_TIMES", "10:00,12:00")
+    from bot.config import config
+    monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
     tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)

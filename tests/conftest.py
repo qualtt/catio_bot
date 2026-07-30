@@ -39,3 +39,19 @@ async def db_session():
         await session.rollback()
 
     await engine.dispose()
+
+@pytest_asyncio.fixture(autouse=True)
+def mock_photo_storage(monkeypatch):
+    async def mock_download(*args, **kwargs):
+        return b"fake_image_data"
+    monkeypatch.setattr("bot.services.photo_storage.download_photo", mock_download)
+    try:
+        monkeypatch.setattr("bot.services.tournaments.notifications.download_photo", mock_download)
+    except AttributeError:
+        pass
+
+@pytest_asyncio.fixture(autouse=True)
+def mock_gemini(monkeypatch):
+    async def mock_analyze(*args, **kwargs):
+        return {"animal_type": "кот"}
+    monkeypatch.setattr("bot.services.gemini.analyze_photo", mock_analyze)

@@ -38,6 +38,15 @@ def _photo(index: int) -> Photo:
         sha256=f"{index:064x}",
     )
 
+@pytest.fixture(autouse=True)
+def mock_now(monkeypatch):
+    from bot.services.tournaments import lifecycle, queries, voting
+    mocked_time = lambda: datetime(2026, 7, 6, 12, 0, tzinfo=app_timezone())
+    monkeypatch.setattr(voting, "now_in_app_tz", mocked_time)
+    monkeypatch.setattr(queries, "now_in_app_tz", mocked_time)
+    if hasattr(lifecycle, "now_in_app_tz"):
+        monkeypatch.setattr(lifecycle, "now_in_app_tz", mocked_time)
+
 
 @pytest.mark.asyncio
 async def test_create_weekly_tournament_collects_previous_week_photos(db_session):
@@ -392,6 +401,7 @@ async def test_close_due_tournament_sets_favorite_from_final_votes(db_session):
                 chosen_entry_id=match.left_entry_id,
                 user_id=user.id,
             )
+    await db_session.flush()
 
     final_match = await db_session.scalar(
         select(PhotoTournamentMatch)
@@ -441,6 +451,14 @@ class FakeResultsBot:
 
     async def send_message(self, **kwargs):
         self.messages.append(kwargs)
+
+    async def send_photo(self, **kwargs):
+        self.messages.append(kwargs)
+        class FakePhoto:
+            file_id = "fake_file_id"
+        class FakeMessage:
+            photo = (FakePhoto(),)
+        return FakeMessage()
 
 
 @pytest.mark.asyncio
@@ -536,7 +554,7 @@ async def test_send_tournament_results_notifications_marks_sent_at(db_session):
     assert sent_count == 1
     assert failed_count == 0
     assert len(bot.messages) == 1
-    assert "Победитель: /photo_" in bot.messages[0]["text"]
+    assert "Победитель: /photo_" in bot.messages[0]["caption"]
     assert tournament.results_notification_sent_at is not None
 
     text = await tournament_results_text(db_session, tournament)

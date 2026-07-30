@@ -78,7 +78,13 @@
     "tournament_pick_right": "↑",
     "tournament_refresh": "Обновить",
     "top_tab_score": "По очкам 🏆",
-    "top_tab_posts": "По фото 📸"
+    "top_tab_posts": "По фото 📸",
+    "dash_change_type": "🐾 Изменить тип",
+    "dash_set_auto": "🚀 Авто-размещение (+{points})",
+    "dash_set_manual": "📅 Выбрать дату (+{points})",
+    "dash_submit": "✅ Отправить фото",
+    "dash_submit_album": "✅ Отправить альбом",
+    "dash_auto_all": "🚀 Авто для всех фото (+{points})"
   },
   "messages": {
     "start": "Привет! Это бот-предложка канала <a href=\"https://t.me/street_kots\">котики и не только почти каждый день</a>.\n\nПросто отправь мне фото, которое хочешь предложить!",
@@ -98,6 +104,7 @@
     "gemini_confirm_invalid": "🤖 Нейросеть отклонила фото.\nПричина: <i>{reason}</i>\n\nСогласны?",
     "user_muted": "К сожалению, вы временно заблокированы в предложке.",
     "ask_animal_type": "Кто на фото?",
+    "dashboard_caption": "📸 Фото {index} из {total}\n\n{gemini}\n---\n🐾 Вид: {animal_type}\n📅 Время: {schedule_time}",
     "album_photo_prompt": "Фото {current} из {total}. Кто на фото?",
     "album_duplicate_warning": "Важно: несколько фото одного и того же животного не будут одобрены. Если в альбоме повторы, лучше оставить один лучший кадр.",
     "album_animal_type_selected": "Фото {current} из {total}. Животное: {animal_type}.",

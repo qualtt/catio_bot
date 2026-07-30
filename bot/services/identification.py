@@ -279,6 +279,10 @@ async def create_ready_identification_batches(
 
     now = now_in_app_tz()
     last_vote_time = await session.scalar(select(func.max(PhotoIdentificationVote.created_at)))
+    if last_vote_time is not None:
+        from db.crud.time_utils import ensure_app_timezone
+        last_vote_time = ensure_app_timezone(last_vote_time)
+        
     if last_vote_time is not None and now - last_vote_time >= timedelta(minutes=5):
         min_size = 1
     else:

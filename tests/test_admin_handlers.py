@@ -3,7 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.handlers import admin
+from bot.handlers.admin import callbacks as admin_callbacks
+from bot.handlers.admin import helpers as admin_helpers
+from db.crud.time_utils import app_timezone
 from db.models.post import Post, PostStatus
 from db.models.user import User
 
@@ -56,11 +58,11 @@ def test_admin_schedule_text_includes_photo_command_and_author():
         id=17,
         photo_id=88,
         animal_type="кот",
-        schedule_time=datetime(2026, 7, 6, 18, 30),
+        schedule_time=datetime(2026, 7, 6, 18, 30, tzinfo=app_timezone()),
         user=SimpleNamespace(username="user", telegram_id=1001),
     )
 
-    text = admin.admin_schedule_text(date(2026, 7, 6), [post])
+    text = admin_helpers.admin_schedule_text(date(2026, 7, 6), [post])
 
     assert "/photo_88" in text
     assert "@user" in text
@@ -68,7 +70,7 @@ def test_admin_schedule_text_includes_photo_command_and_author():
 
 @pytest.mark.asyncio
 async def test_admin_custom_animal_type_normalizes_homoglyphs(db_session, monkeypatch):
-    monkeypatch.setattr(admin, "async_session", lambda: SessionContext(db_session))
+    monkeypatch.setattr(admin_callbacks, "async_session", lambda: SessionContext(db_session))
 
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
@@ -89,7 +91,9 @@ async def test_admin_custom_animal_type_normalizes_homoglyphs(db_session, monkey
     message = FakeMessage("Нaceкомое")
     bot = FakeBot()
 
-    await admin.handle_admin_custom_animal_text(message, state, bot)
+    from bot.handlers.admin import messages as admin_messages
+    monkeypatch.setattr(admin_messages, "async_session", lambda: SessionContext(db_session))
+    await admin_messages.handle_admin_custom_animal_text(message, state, bot)
     await db_session.refresh(post)
 
     assert post.animal_type == "Насекомое"

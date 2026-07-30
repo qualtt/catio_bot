@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from bot.services.captions import (
@@ -6,6 +6,7 @@ from bot.services.captions import (
     album_submission_photo_caption,
     submission_caption,
 )
+from db.crud.time_utils import app_timezone
 from db.models.post import PostStatus
 
 
@@ -27,7 +28,7 @@ def test_album_submission_photo_caption_contains_number_status_and_schedule():
     post = SimpleNamespace(
         id=7,
         animal_type="птица",
-        schedule_time=datetime(2026, 7, 6, 12, 0),
+        schedule_time=datetime(2026, 7, 6, 12, 0, tzinfo=app_timezone()),
         duplicate_of_photo_id=99,
         duplicate_distance=3,
         status=PostStatus.PENDING,
@@ -45,7 +46,7 @@ def test_album_submission_photo_caption_renders_schedule_in_app_timezone():
     post = SimpleNamespace(
         id=7,
         animal_type="птица",
-        schedule_time=datetime(2026, 7, 6, 8, 0, tzinfo=UTC),
+        schedule_time=datetime(2026, 7, 6, 8, 0, tzinfo=timezone.utc),
         duplicate_of_photo_id=None,
         duplicate_distance=None,
         status=PostStatus.PENDING,
@@ -62,7 +63,7 @@ def test_admin_album_view_caption_contains_current_position_and_status():
         SimpleNamespace(
             id=7,
             animal_type="кот",
-            schedule_time=datetime(2026, 7, 6, 12, 0),
+            schedule_time=datetime(2026, 7, 6, 12, 0, tzinfo=app_timezone()),
             duplicate_of_photo_id=None,
             duplicate_distance=None,
             submission_group_index=1,
@@ -71,7 +72,7 @@ def test_admin_album_view_caption_contains_current_position_and_status():
         SimpleNamespace(
             id=8,
             animal_type="птица",
-            schedule_time=datetime(2026, 7, 7, 12, 0),
+            schedule_time=datetime(2026, 7, 7, 12, 0, tzinfo=app_timezone()),
             duplicate_of_photo_id=None,
             duplicate_distance=None,
             submission_group_index=2,

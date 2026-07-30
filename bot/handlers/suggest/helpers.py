@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, time, timedelta
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import CallbackQuery, Message
 
 from bot.config import config
@@ -31,7 +31,9 @@ def user_display(user) -> str:
     return str(user.id)
 
 
-def _format_schedule(value: datetime) -> str:
+def _format_schedule(value) -> str:
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
     return format_schedule(value)
 
 
@@ -43,58 +45,61 @@ def _album_items(data: dict) -> list[dict]:
     return list(data.get("album_items") or [])
 
 
-def _album_prompt_text(data: dict, *, include_warning: bool = False) -> str:
-    items = _album_items(data)
-    index = int(data.get("album_index") or 0)
-    item = items[index] if items else {}
-    
-    gemini = item.get("gemini")
-    if gemini and not item.get("gemini_rejected"):
-        if gemini.get("is_valid"):
-            text = bot_content.message("gemini_confirm_valid", animal=gemini.get("animal"), reason=gemini.get("reason"))
-        else:
-            text = bot_content.message("gemini_confirm_invalid", reason=gemini.get("reason"))
-        
-        if gemini.get("comment"):
-            text += f"\n\n💬 Комментарий ИИ: {gemini.get('comment')}"
-            
-        text = f"Фото {index + 1} из {len(items)}.\n\n" + text
+def _format_dashboard_time(item: dict) -> str:
+    if item.get("is_auto_scheduled"):
+        if item.get("schedule_time"):
+            return f"Автоматически ({_format_schedule(item['schedule_time'])})"
+        return "Автоматически"
+    if item.get("schedule_time"):
+        return _format_schedule(item["schedule_time"])
+    return "Не выбрано"
+
+
+def _photo_dashboard_text(data: dict, *, is_album: bool) -> str:
+    if is_album:
+        items = _album_items(data)
+        index = int(data.get("album_index") or 0)
+        item = items[index] if items else {}
+        total = len(items)
+        display_index = index + 1
     else:
-        text = bot_content.message(
-            "album_photo_prompt",
-            current=index + 1,
-            total=len(items),
-        )
+        item = data
+        total = 1
+        display_index = 1
         
-    text = append_duplicate_note(
+    gemini = item.get("gemini")
+    gemini_text = ""
+    if gemini:
+        if gemini.get("is_valid"):
+            gemini_text = f"🤖 Нейросеть: {gemini.get('animal')}"
+        else:
+            gemini_text = f"🤖 Нейросеть отклонила: {gemini.get('reason')}"
+        if gemini.get("comment"):
+            gemini_text += f"\n💬 Комментарий ИИ: {gemini.get('comment')}"
+    else:
+        gemini_text = "🤖 Нейросеть: Ожидание..."
+
+    animal_type = item.get("animal_type") or "Не выбран"
+    schedule_time = _format_dashboard_time(item)
+
+    text = bot_content.message(
+        "dashboard_caption",
+        index=display_index,
+        total=total,
+        gemini=gemini_text,
+        animal_type=animal_type,
+        schedule_time=schedule_time,
+    )
+    
+    # Remove index header for single photos
+    if not is_album:
+        text = text.replace(f"📸 Фото {display_index} из {total}\n\n", "")
+
+    return append_duplicate_note(
         text,
         item.get("duplicate_of_photo_id"),
         item.get("duplicate_distance"),
     )
-    if include_warning:
-        text += "\n\n" + bot_content.message("album_duplicate_warning")
-    return text
-
-
-def _single_photo_prompt_text(data: dict) -> str:
-    gemini = data.get("gemini")
-    if gemini and not data.get("gemini_rejected"):
-        if gemini.get("is_valid"):
-            text = bot_content.message("gemini_confirm_valid", animal=gemini.get("animal"), reason=gemini.get("reason"))
-        else:
-            text = bot_content.message("gemini_confirm_invalid", reason=gemini.get("reason"))
-            
-        if gemini.get("comment"):
-            text += f"\n\n💬 Комментарий ИИ: {gemini.get('comment')}"
-    else:
-        text = bot_content.message("ask_animal_type")
-        
-    return append_duplicate_note(
-        text,
-        data.get("duplicate_of_photo_id"),
-        data.get("duplicate_distance"),
-    )
-
 
 def _album_animal_summary(items: list[dict]) -> str:
     return "\n".join(
@@ -201,12 +206,6 @@ def _album_selected_slots(data: dict, *, exclude_index: int | None = None) -> se
     }
 
 
-def _album_schedule_footer_buttons() -> list[tuple[str, str]]:
-    return [
-        (bot_content.button("album_schedule_auto_current"), "album_auto_current"),
-        (bot_content.button("album_schedule_auto_remaining"), "album_auto_remaining"),
-    ]
-
 
 def _album_schedule_prompt_kwargs(data: dict) -> dict:
     items, _, _, schedule_index = _album_schedule_context(data)
@@ -255,7 +254,6 @@ async def _build_calendar_markup(data: dict, *, year: int, month: int):
         _, _, _, schedule_index = _album_schedule_context(data)
         selected_slots = _album_selected_slots(data, exclude_index=schedule_index)
         availability = _subtract_selected_album_slots(availability, selected_slots)
-        footer_buttons = _album_schedule_footer_buttons()
 
     return build_month_calendar(
         year=year,
@@ -289,17 +287,29 @@ async def _show_album_schedule_calendar(
 
 
 async def _edit_callback_prompt(callback: CallbackQuery, text: str, reply_markup=None) -> None:
-    if callback.message.photo:
-        await callback.message.edit_caption(caption=text, reply_markup=reply_markup)
-        return
-    await callback.message.edit_text(text, reply_markup=reply_markup)
+    try:
+        if callback.message.photo:
+            await callback.message.edit_caption(caption=text, reply_markup=reply_markup)
+            return
+        await callback.message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            logger.debug("Ignored message is not modified error for callback prompt")
+        else:
+            raise
 
 
 async def _edit_message_text_or_caption(message: Message, text: str, reply_markup=None) -> None:
-    if message.photo:
-        await message.edit_caption(caption=text, reply_markup=reply_markup)
-        return
-    await message.edit_text(text, reply_markup=reply_markup)
+    try:
+        if message.photo:
+            await message.edit_caption(caption=text, reply_markup=reply_markup)
+            return
+        await message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            logger.debug("Ignored message is not modified error for edit message")
+        else:
+            raise
 
 
 async def _edit_bot_message_text_or_caption(
@@ -318,14 +328,24 @@ async def _edit_bot_message_text_or_caption(
             reply_markup=reply_markup,
         )
         return
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            return
+        # If it's not a caption, it will raise another BadRequest, so we fall through
     except TelegramAPIError:
         pass
-    await bot.edit_message_text(
-        chat_id=chat_id,
-        message_id=message_id,
-        text=text,
-        reply_markup=reply_markup,
-    )
+
+    try:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            reply_markup=reply_markup,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e).lower():
+            return
+        raise
 
 
 async def _normalize_custom_animal_type_text(message: Message) -> str | None:
@@ -355,4 +375,4 @@ async def _normalize_custom_animal_type_text(message: Message) -> str | None:
 
 
 
-__all__ = ['_album_animal_summary', '_album_items', '_album_prompt_text', '_album_schedule_context', '_album_schedule_footer_buttons', '_album_schedule_prompt_kwargs', '_album_schedule_state', '_album_schedule_summary', '_album_selected_slots', '_build_calendar_markup', '_edit_bot_message_text_or_caption', '_edit_callback_prompt', '_edit_message_text_or_caption', '_filter_selected_album_times', '_format_schedule', '_is_album_submission', '_next_unscheduled_index', '_next_untyped_album_index', '_normalize_custom_animal_type_text', '_parse_album_schedule_time', '_serialize_album_schedule_times', '_show_album_schedule_calendar', '_single_photo_prompt_text', '_subtract_selected_album_slots', 'logger', 'user_display']
+__all__ = ['_album_animal_summary', '_album_items', '_album_schedule_context', '_album_schedule_prompt_kwargs', '_album_schedule_state', '_album_schedule_summary', '_album_selected_slots', '_build_calendar_markup', '_edit_bot_message_text_or_caption', '_edit_callback_prompt', '_edit_message_text_or_caption', '_filter_selected_album_times', '_format_schedule', '_is_album_submission', '_next_unscheduled_index', '_next_untyped_album_index', '_normalize_custom_animal_type_text', '_parse_album_schedule_time', '_photo_dashboard_text', '_serialize_album_schedule_times', '_show_album_schedule_calendar', '_subtract_selected_album_slots', 'logger', 'user_display']

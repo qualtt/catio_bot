@@ -30,7 +30,7 @@ def get_database_url() -> str:
         from bot.config import config as app_config
 
         database_url = app_config.DATABASE_URL
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
 
     if not database_url:

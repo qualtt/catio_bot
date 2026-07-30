@@ -242,6 +242,7 @@ async def submit_tournament_vote(
         chosen_entry_id=chosen_entry_id,
     )
     session.add(vote)
+    await session.flush()
     if match.feeder_left_match_id is None:
         if chosen_entry_id == view.left_entry.id:
             match.left_votes += 1
