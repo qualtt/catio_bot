@@ -2,6 +2,7 @@ import logging
 from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.context import FSMContext
@@ -513,12 +514,20 @@ async def _finalize_album_submission(
             )
             return
 
-        posts = await _create_album_posts(
-            session,
-            data=data,
-            schedule_times=complete_schedule_times,
-            schedule_auto_flags=schedule_auto_flags,
-        )
+        try:
+            posts = await _create_album_posts(
+                session,
+                data=data,
+                schedule_times=complete_schedule_times,
+                schedule_auto_flags=schedule_auto_flags,
+            )
+        except IntegrityError:
+            await state.clear()
+            await _edit_message_text_or_caption(
+                callback.message,
+                "⚠️ Время сессии истекло, и некоторые фотографии были удалены для экономии места. Пожалуйста, начните заново."
+            )
+            return
 
     await state.clear()
     await _edit_message_text_or_caption(

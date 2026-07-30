@@ -1,6 +1,7 @@
 import logging
 from datetime import date, datetime, time, timedelta
 
+from sqlalchemy.exc import IntegrityError
 from aiogram import Bot, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
@@ -261,20 +262,28 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
         animal_type = single.get("animal_type")
         user_id = single.get("user_id")
 
-        async with async_session() as session:
-            schedule_time = await get_next_auto_slot(session, animal_type=animal_type)
-            post = await create_post(
-                session,
-                user_id=user_id,
-                file_id=file_id,
-                animal_type=animal_type,
-                is_auto_scheduled=True,
-                manual_time=schedule_time,
-                photo_id=photo_id,
-                duplicate_of_photo_id=duplicate_of_photo_id,
-                duplicate_distance=duplicate_distance,
+        try:
+            async with async_session() as session:
+                schedule_time = await get_next_auto_slot(session, animal_type=animal_type)
+                post = await create_post(
+                    session,
+                    user_id=user_id,
+                    file_id=file_id,
+                    animal_type=animal_type,
+                    is_auto_scheduled=True,
+                    manual_time=schedule_time,
+                    photo_id=photo_id,
+                    duplicate_of_photo_id=duplicate_of_photo_id,
+                    duplicate_distance=duplicate_distance,
+                )
+                await session.refresh(post, ["duplicate_of_photo"])
+        except IntegrityError:
+            _finish_single_submission(callback.message.message_id)
+            await _edit_message_text_or_caption(
+                callback.message, 
+                "⚠️ Время сессии истекло, и фотография была удалена для экономии места. Пожалуйста, отправьте фото заново."
             )
-            await session.refresh(post, ["duplicate_of_photo"])
+            return
 
         _finish_single_submission(callback.message.message_id)
         success_text = bot_content.message(
@@ -304,14 +313,22 @@ async def handle_schedule_auto(callback: CallbackQuery, state: FSMContext, bot: 
 
     if _is_album_submission(data):
         items = _album_items(data)
-        async with async_session() as session:
-            schedule_times = await _allocate_album_schedule_slots(session, items)
-            posts = await _create_album_posts(
-                session,
-                data=data,
-                schedule_times=schedule_times,
-                is_auto_scheduled=True,
+        try:
+            async with async_session() as session:
+                schedule_times = await _allocate_album_schedule_slots(session, items)
+                posts = await _create_album_posts(
+                    session,
+                    data=data,
+                    schedule_times=schedule_times,
+                    is_auto_scheduled=True,
+                )
+        except IntegrityError:
+            await state.clear()
+            await _edit_message_text_or_caption(
+                callback.message,
+                "⚠️ Время сессии истекло, и некоторые фотографии были удалены для экономии места. Пожалуйста, начните заново."
             )
+            return
 
         await state.clear()
         await _edit_message_text_or_caption(
@@ -477,18 +494,26 @@ async def handle_manual_time(callback: CallbackQuery, state: FSMContext, bot: Bo
         animal_type = single.get("animal_type")
         user_id = single.get("user_id")
 
-        post = await create_post(
-            session,
-            user_id=user_id,
-            file_id=file_id,
-            animal_type=animal_type,
-            is_auto_scheduled=False,
-            manual_time=schedule_time,
-            photo_id=photo_id,
-            duplicate_of_photo_id=duplicate_of_photo_id,
-            duplicate_distance=duplicate_distance,
-        )
-        await session.refresh(post, ["duplicate_of_photo"])
+        try:
+            post = await create_post(
+                session,
+                user_id=user_id,
+                file_id=file_id,
+                animal_type=animal_type,
+                is_auto_scheduled=False,
+                manual_time=schedule_time,
+                photo_id=photo_id,
+                duplicate_of_photo_id=duplicate_of_photo_id,
+                duplicate_distance=duplicate_distance,
+            )
+            await session.refresh(post, ["duplicate_of_photo"])
+        except IntegrityError:
+            _finish_single_submission(callback.message.message_id)
+            await _edit_message_text_or_caption(
+                callback.message, 
+                "⚠️ Время сессии истекло, и фотография была удалена для экономии места. Пожалуйста, отправьте фото заново."
+            )
+            return
 
     _finish_single_submission(callback.message.message_id)
     success_text = bot_content.message(
