@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
+from bot.config import config
 from bot.services.photo_storage import delete_photos_batch
 from db.crud.photos import get_abandoned_photos, delete_photos
 from db.database import async_session
@@ -12,8 +13,8 @@ async def cleanup_loop() -> None:
     logger.info("Cleanup task started")
     while True:
         try:
-            await asyncio.sleep(3600)  # Check every hour
-            older_than = datetime.utcnow() - timedelta(hours=2)
+            await asyncio.sleep(config.CLEANUP_INTERVAL_SECONDS)
+            older_than = datetime.utcnow() - timedelta(hours=config.CLEANUP_EXPIRE_HOURS)
             
             async with async_session() as session:
                 abandoned_photos = await get_abandoned_photos(session, older_than)
