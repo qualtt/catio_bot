@@ -347,7 +347,6 @@ async def _allocate_album_schedule_slots(
         selected_slots.add(slot)
         if is_cat_animal_type(animal_type):
             selected_cat_dates.add(slot.date())
-        start_at = slot + timedelta(minutes=1)
 
     return slots
 
