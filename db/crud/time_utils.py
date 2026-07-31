@@ -35,5 +35,3 @@ def ensure_app_timezone(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=app_timezone())
     return value.astimezone(app_timezone())
-
-

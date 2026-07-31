@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO)
 
+
 async def main():
     bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     storage = RedisStorage.from_url(f"redis://{config.REDIS_HOST}:{config.REDIS_PORT}/0")
@@ -44,6 +45,7 @@ async def main():
             await cleanup_task
         await storage.close()
         await bot.session.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

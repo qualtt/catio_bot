@@ -123,7 +123,10 @@ async def publisher_loop(bot: Bot) -> None:
                 logger.info("Published %s scheduled posts", published_count)
             review_batch_count = await create_and_send_ready_identification_batches(bot)
             if review_batch_count:
-                logger.info("Sent %s old-photo identification review batches", review_batch_count)
+                logger.info(
+                    "Sent %s old-photo identification review batches",
+                    review_batch_count,
+                )
             await run_tournament_maintenance(bot)
         except asyncio.CancelledError:
             raise

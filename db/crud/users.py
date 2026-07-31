@@ -6,7 +6,12 @@ from db.models.post import Post, PostStatus
 from db.models.user import User
 
 
-async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str | None = None, full_name: str | None = None) -> User:
+async def get_or_create_user(
+    session: AsyncSession,
+    telegram_id: int,
+    username: str | None = None,
+    full_name: str | None = None,
+) -> User:
     stmt = select(User).where(User.telegram_id == telegram_id)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
@@ -77,5 +82,7 @@ async def get_users_not_voted_in_tournament(session: AsyncSession, tournament_id
 
 
 async def get_tournament_voter_count(session: AsyncSession, tournament_id: int) -> int:
-    stmt = select(func.count(func.distinct(PhotoTournamentVote.user_id))).where(PhotoTournamentVote.tournament_id == tournament_id)
+    stmt = select(func.count(func.distinct(PhotoTournamentVote.user_id))).where(
+        PhotoTournamentVote.tournament_id == tournament_id
+    )
     return (await session.execute(stmt)).scalar() or 0

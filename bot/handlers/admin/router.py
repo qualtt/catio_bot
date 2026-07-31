@@ -10,5 +10,3 @@ class AdminState(StatesGroup):
     waiting_for_custom_animal_type = State()
     waiting_for_broadcast_text = State()
     waiting_for_broadcast_confirm = State()
-
-

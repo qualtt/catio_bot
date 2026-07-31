@@ -17,9 +17,7 @@ from .base import Base
 
 class ChannelHistory(Base):
     __tablename__ = "channel_history"
-    __table_args__ = (
-        UniqueConstraint("chat_id", "message_id", name="uq_channel_history_chat_message"),
-    )
+    __table_args__ = (UniqueConstraint("chat_id", "message_id", name="uq_channel_history_chat_message"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)

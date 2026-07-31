@@ -36,10 +36,10 @@ async def _process_single_photo_message(message: Message, state: FSMContext, bot
         if user.is_muted:
             await message.answer(bot_content.message("user_muted"))
             return
-            
+
         item = await _store_submitted_photo(bot, file_id=file_id, file_unique_id=file_unique_id)
         from aiogram.utils.chat_action import ChatActionSender
-        
+
         gemini_result = None
         if config.ENABLE_GEMINI:
             async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
@@ -65,7 +65,11 @@ async def _process_single_photo_message(message: Message, state: FSMContext, bot
     }
 
     # Can submit if we have both an animal type and a schedule time
-    can_submit = bool(submission_data.get("animal_type") and submission_data.get("schedule_time") or submission_data.get("is_auto_scheduled"))
+    can_submit = bool(
+        submission_data.get("animal_type")
+        and submission_data.get("schedule_time")
+        or submission_data.get("is_auto_scheduled")
+    )
 
     sent = await message.reply(
         _photo_dashboard_text(submission_data, is_album=False),
@@ -85,9 +89,10 @@ async def _process_album_messages(messages: list[Message], state: FSMContext, bo
         if user.is_muted:
             await messages[0].answer(bot_content.message("user_muted"))
             return
-            
+
         items = []
         from aiogram.utils.chat_action import ChatActionSender
+
         async with ChatActionSender.typing(bot=bot, chat_id=messages[0].chat.id):
             for message in messages:
                 photo_size = message.photo[-1]
@@ -96,24 +101,26 @@ async def _process_album_messages(messages: list[Message], state: FSMContext, bo
                     file_id=photo_size.file_id,
                     file_unique_id=photo_size.file_unique_id,
                 )
-                
+
                 gemini_result = None
                 if config.ENABLE_GEMINI:
                     gemini_result = await analyze_photo(bot, photo_size.file_id)
-                
+
                 # Auto-assign animal_type if gemini says it's valid
                 animal_type = None
                 if gemini_result and gemini_result.get("is_valid"):
                     animal_type = gemini_result.get("animal")
-                    
-                items.append({
-                "file_id": photo_size.file_id,
-                "photo_id": item["photo_id"],
-                "duplicate_of_photo_id": item.get("duplicate_of_photo_id"),
-                "duplicate_distance": item.get("duplicate_distance"),
-                "gemini": gemini_result,
-                "animal_type": animal_type,
-            })
+
+                items.append(
+                    {
+                        "file_id": photo_size.file_id,
+                        "photo_id": item["photo_id"],
+                        "duplicate_of_photo_id": item.get("duplicate_of_photo_id"),
+                        "duplicate_distance": item.get("duplicate_distance"),
+                        "gemini": gemini_result,
+                        "animal_type": animal_type,
+                    }
+                )
     except Exception:
         logger.exception("Failed to store submitted album")
         await messages[0].answer(bot_content.message("photo_storage_failed"))
@@ -164,5 +171,11 @@ async def _collect_album_message(message: Message, state: FSMContext, bot: Bot) 
         buffer.task = asyncio.create_task(_flush_album_buffer_after_delay(key))
 
 
-
-__all__ = ['_album_lock', '_collect_album_message', '_flush_album_buffer_after_delay', '_process_album_messages', '_process_single_photo_message', 'logger']
+__all__ = [
+    "_album_lock",
+    "_collect_album_message",
+    "_flush_album_buffer_after_delay",
+    "_process_album_messages",
+    "_process_single_photo_message",
+    "logger",
+]

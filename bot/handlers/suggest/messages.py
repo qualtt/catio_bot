@@ -37,7 +37,10 @@ async def handle_single_custom_animal_type(message: Message, bot: Bot):
         single["animal_type"] = animal_type
         # Re-render dashboard
         from bot.keyboards.inline import get_photo_dashboard_kb
-        can_submit = bool(single.get("animal_type") and (single.get("schedule_time") or single.get("is_auto_scheduled")))
+
+        can_submit = bool(
+            single.get("animal_type") and (single.get("schedule_time") or single.get("is_auto_scheduled"))
+        )
         await bot.edit_message_caption(
             chat_id=message.chat.id,
             message_id=prompt_message_id,
@@ -58,14 +61,17 @@ async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bo
         index = int(data.get("album_index") or 0)
         items[index]["animal_type"] = animal_type
         await state.update_data(album_items=items)
-        
+
         # Re-render dashboard
         from bot.keyboards.inline import get_photo_dashboard_kb
-        can_submit = all(it.get("animal_type") and (it.get("schedule_time") or it.get("is_auto_scheduled")) for it in items)
-        
+
+        can_submit = all(
+            it.get("animal_type") and (it.get("schedule_time") or it.get("is_auto_scheduled")) for it in items
+        )
+
         prompt_chat_id = data.get("album_prompt_chat_id")
         prompt_message_id = data.get("album_prompt_message_id")
-        
+
         if prompt_chat_id and prompt_message_id:
             await bot.edit_message_caption(
                 chat_id=prompt_chat_id,
@@ -79,5 +85,9 @@ async def handle_custom_animal_type(message: Message, state: FSMContext, bot: Bo
     await message.answer(bot_content.message("post_processed_or_missing"))
 
 
-
-__all__ = ['handle_custom_animal_type', 'handle_photo', 'handle_single_custom_animal_type', 'logger']
+__all__ = [
+    "handle_custom_animal_type",
+    "handle_photo",
+    "handle_single_custom_animal_type",
+    "logger",
+]

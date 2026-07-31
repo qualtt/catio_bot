@@ -57,8 +57,17 @@ class ImportStats:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Import channel photo history into S3 and database.")
-    parser.add_argument("--channel", default=config.CHANNEL_ID, help="Channel username/id to import from.")
-    parser.add_argument("--limit", type=int, default=0, help="Max messages to scan, 0 means all history.")
+    parser.add_argument(
+        "--channel",
+        default=config.CHANNEL_ID,
+        help="Channel username/id to import from.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Max messages to scan, 0 means all history.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Scan history without S3/DB writes.")
     return parser.parse_args()
 
@@ -86,7 +95,9 @@ def normalize_chat_id(value: str) -> int | str:
     return stripped
 
 
-def read_downloaded_media(downloaded: BinaryIO | str | None) -> tuple[bytes, str | None]:
+def read_downloaded_media(
+    downloaded: BinaryIO | str | None,
+) -> tuple[bytes, str | None]:
     if downloaded is None:
         raise RuntimeError("Pyrogram returned no downloaded media")
     if isinstance(downloaded, str):
@@ -117,10 +128,7 @@ def message_published_at(message: Message) -> datetime | None:
 
 def should_backfill_photo(photo: Photo) -> bool:
     return (
-        photo.sha256 is None
-        or photo.perceptual_hash is None
-        or photo.content_type is None
-        or photo.file_size is None
+        photo.sha256 is None or photo.perceptual_hash is None or photo.content_type is None or photo.file_size is None
     )
 
 

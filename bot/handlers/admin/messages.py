@@ -41,9 +41,7 @@ async def handle_admin_broadcast_text(message: Message, state: FSMContext):
         await message.answer(bot_content.message("admin_broadcast_empty"))
         return
     if len(text) > BROADCAST_MESSAGE_LIMIT:
-        await message.answer(
-            bot_content.message("admin_broadcast_too_long", max_length=BROADCAST_MESSAGE_LIMIT)
-        )
+        await message.answer(bot_content.message("admin_broadcast_too_long", max_length=BROADCAST_MESSAGE_LIMIT))
         return
 
     await state.set_state(AdminState.waiting_for_broadcast_confirm)
@@ -65,7 +63,7 @@ async def handle_admin_reschedule_text(message: Message, state: FSMContext):
     return_date = parse_schedule_date(data.get("return_date"))
     selected_date_str = data.get("selected_reschedule_date")
     default_date = date.fromisoformat(selected_date_str) if selected_date_str else None
-    
+
     new_schedule = parse_admin_datetime(message.text or "", default_date)
     if new_schedule is None:
         await message.answer(
@@ -197,5 +195,3 @@ async def handle_admin_custom_animal_text(message: Message, state: FSMContext, b
 
     await state.clear()
     await message.answer(bot_content.message("animal_changed"))
-
-

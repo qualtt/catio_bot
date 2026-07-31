@@ -16,15 +16,16 @@ class TournamentSourcePhoto:
     source_post_id: int | None = None
     source_channel_history_id: int | None = None
 
+
 @dataclass(frozen=True)
 class TournamentVoteSubmission:
     accepted: bool
     created: bool
     tournament_id: int | None = None
 
+
 @dataclass(frozen=True)
 class TournamentMatchView:
     match: PhotoTournamentMatch
     left_entry: PhotoTournamentEntry
     right_entry: PhotoTournamentEntry
-

@@ -109,9 +109,7 @@ async def _create_full_bracket(
         for match_index in range(0, len(current_round_matches), 2):
             left_feeder = current_round_matches[match_index]
             right_feeder = (
-                current_round_matches[match_index + 1]
-                if match_index + 1 < len(current_round_matches)
-                else None
+                current_round_matches[match_index + 1] if match_index + 1 < len(current_round_matches) else None
             )
             match = PhotoTournamentMatch(
                 tournament_id=tournament.id,
@@ -242,11 +240,7 @@ async def _close_tournament(
                 continue
 
             left_feeder = match_by_id[match.feeder_left_match_id]
-            right_feeder = (
-                match_by_id[match.feeder_right_match_id]
-                if match.feeder_right_match_id is not None
-                else None
-            )
+            right_feeder = match_by_id[match.feeder_right_match_id] if match.feeder_right_match_id is not None else None
             left_entry = await session.get(PhotoTournamentEntry, left_feeder.winner_entry_id)
             right_entry = (
                 await session.get(PhotoTournamentEntry, right_feeder.winner_entry_id)
@@ -307,7 +301,8 @@ async def close_due_tournaments(session: AsyncSession, *, now: datetime | None =
     tournaments = list(
         (
             await session.execute(
-                select(PhotoTournament).where(
+                select(PhotoTournament)
+                .where(
                     PhotoTournament.status == TOURNAMENT_RUNNING,
                     PhotoTournament.voting_ends_at.is_not(None),
                 )
@@ -316,9 +311,7 @@ async def close_due_tournaments(session: AsyncSession, *, now: datetime | None =
         ).scalars()
     )
     closed_tournaments = [
-        tournament
-        for tournament in tournaments
-        if ensure_app_timezone(tournament.voting_ends_at) <= current
+        tournament for tournament in tournaments if ensure_app_timezone(tournament.voting_ends_at) <= current
     ]
     for tournament in closed_tournaments:
         await _close_tournament(session, tournament, now=current)
@@ -433,10 +426,12 @@ async def run_tournament_maintenance(bot: Bot) -> None:
         for tournament in tournaments_to_notify:
             sent_count = await send_tournament_notifications(bot, session, tournament)
             if sent_count:
-                logger.info("Sent %s notifications for photo tournament %s", sent_count, tournament.id)
+                logger.info(
+                    "Sent %s notifications for photo tournament %s",
+                    sent_count,
+                    tournament.id,
+                )
 
         results_count = await send_pending_tournament_results_notifications(bot, session)
         if results_count:
             logger.info("Sent results notifications for %s photo tournaments", results_count)
-
-

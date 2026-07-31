@@ -45,28 +45,26 @@ async def handle_admin_broadcast_start(callback: CallbackQuery, state: FSMContex
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
-        
+
     from bot.keyboards.inline import get_broadcast_audience_kb
     from bot.services.tournaments.queries import get_current_tournament
-    
+
     async with async_session() as session:
         has_active = (await get_current_tournament(session)) is not None
-        
-    await callback.message.edit_text(
-        "Кому отправить рассылку?",
-        reply_markup=get_broadcast_audience_kb(has_active)
-    )
+
+    await callback.message.edit_text("Кому отправить рассылку?", reply_markup=get_broadcast_audience_kb(has_active))
     await callback.answer()
+
 
 @admin_router.callback_query(F.data.in_({"admin_broadcast_all", "admin_broadcast_unvoted"}))
 async def handle_admin_broadcast_audience(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
-        
+
     audience_type = "all" if callback.data == "admin_broadcast_all" else "unvoted"
     await state.update_data(broadcast_audience=audience_type)
-    
+
     await _start_broadcast_prompt(callback.message, state)
     await callback.answer()
 
@@ -86,16 +84,18 @@ async def handle_admin_muted_callback(callback: CallbackQuery):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
-        
+
     async with async_session() as session:
         from db.crud import get_muted_users
+
         users = await get_muted_users(session)
-        
+
     if not users:
         await callback.answer("Нет замученных пользователей.", show_alert=True)
         return
-        
+
     from bot.keyboards.inline import get_muted_users_kb
+
     await callback.message.answer("Список замученных пользователей:", reply_markup=get_muted_users_kb(users))
     await callback.answer()
 
@@ -121,6 +121,7 @@ async def handle_admin_broadcast_send(callback: CallbackQuery, state: FSMContext
     if audience == "unvoted":
         from bot.services.tournaments.queries import get_current_tournament
         from db.crud import get_users_not_voted_in_tournament
+
         async with async_session() as session:
             current_tournament = await get_current_tournament(session)
             if current_tournament:
@@ -251,12 +252,12 @@ async def handle_admin_reschedule_start(callback: CallbackQuery, state: FSMConte
 async def handle_admin_cal_nav(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         return
-        
+
     _, _, year_str, month_str = callback.data.split("_")
     data = await state.get_data()
     post_id = int(data.get("post_id") or 0)
     return_date = date.fromisoformat(data.get("return_date") or now_in_app_tz().date().isoformat())
-    
+
     await show_admin_reschedule_calendar(callback, post_id, return_date, year=int(year_str), month=int(month_str))
     await callback.answer()
 
@@ -270,37 +271,44 @@ async def handle_admin_cal_invalid(callback: CallbackQuery):
 async def handle_admin_cal_day(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         return
-        
+
     selected_date_str = callback.data.removeprefix("admin_cal_day_")
     selected_date = date.fromisoformat(selected_date_str)
-    
+
     data = await state.get_data()
     post_id = int(data.get("post_id") or 0)
     return_date = date.fromisoformat(data.get("return_date") or now_in_app_tz().date().isoformat())
-    
+
     await state.update_data(selected_reschedule_date=selected_date.isoformat())
-    
+
     from bot.keyboards.inline import InlineKeyboardBuilder
     from db.crud.time_utils import parse_daily_slot_times
-    
+
     async with async_session() as session:
         from .helpers import load_admin_schedule_posts
+
         day_posts = await load_admin_schedule_posts(session, selected_date)
         taken_times = {post.schedule_time.timetz().replace(tzinfo=None) for post in day_posts}
-    
+
     builder = InlineKeyboardBuilder()
     for slot_time in parse_daily_slot_times():
         if slot_time not in taken_times:
             # Add button for free slot
             dt = datetime.combine(selected_date, slot_time)
-            builder.button(text=slot_time.strftime("%H:%M"), callback_data=f"admin_reschedule_slot_{dt.isoformat()}")
-    
-    builder.button(text=bot_content.button("cancel"), callback_data=f"admin_cancel_reschedule_{return_date.isoformat()}")
+            builder.button(
+                text=slot_time.strftime("%H:%M"),
+                callback_data=f"admin_reschedule_slot_{dt.isoformat()}",
+            )
+
+    builder.button(
+        text=bot_content.button("cancel"),
+        callback_data=f"admin_cancel_reschedule_{return_date.isoformat()}",
+    )
     builder.adjust(3)
-    
+
     await callback.message.edit_text(
         f"Публикация #{post_id}. Выбрана дата: {selected_date_str}.\nВыберите свободный слот или отправьте время вручную (ЧЧ:ММ):",
-        reply_markup=builder.as_markup()
+        reply_markup=builder.as_markup(),
     )
     await callback.answer()
 
@@ -309,13 +317,13 @@ async def handle_admin_cal_day(callback: CallbackQuery, state: FSMContext):
 async def handle_admin_reschedule_slot(callback: CallbackQuery, state: FSMContext, bot: Bot):
     if not is_admin(callback):
         return
-        
+
     dt_str = callback.data.removeprefix("admin_reschedule_slot_")
     new_schedule = datetime.fromisoformat(dt_str).replace(tzinfo=now_in_app_tz().tzinfo)
-    
+
     data = await state.get_data()
     post_id = int(data.get("post_id") or 0)
-    
+
     async with async_session() as session:
         post = await load_post(session, post_id)
         if not post or post.status != PostStatus.APPROVED:
@@ -658,11 +666,11 @@ async def handle_admin_mute(callback: CallbackQuery, bot: Bot):
     if not is_admin_user(callback.from_user.id):
         await callback.answer(bot_content.message("not_admin"))
         return
-        
+
     user_id = int(callback.data.removeprefix("admin_mute_"))
     async with async_session() as session:
         await mute_user(session, user_id)
-        
+
         stmt = select(Post).where(Post.user_id == user_id, Post.status == PostStatus.PENDING)
         pending_posts = list((await session.execute(stmt)).scalars())
         for post in pending_posts:
@@ -679,14 +687,13 @@ async def handle_admin_unmute(callback: CallbackQuery, bot: Bot):
     if not is_admin_user(callback.from_user.id):
         await callback.answer(bot_content.message("not_admin"))
         return
-        
+
     user_id = int(callback.data.removeprefix("admin_unmute_"))
     async with async_session() as session:
         from db.crud import unmute_user
+
         await unmute_user(session, user_id)
 
     if callback.message:
         await callback.message.edit_text("Пользователь размучен.")
     await callback.answer("Успешно!", show_alert=True)
-
-

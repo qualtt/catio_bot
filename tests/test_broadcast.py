@@ -33,7 +33,11 @@ async def test_broadcast_message_counts_success_and_failure(db_session, monkeypa
 
     bot = AsyncMock()
     bot.send_message = AsyncMock(
-        side_effect=[None, TelegramAPIError(method="sendMessage", message="blocked"), None]
+        side_effect=[
+            None,
+            TelegramAPIError(method="sendMessage", message="blocked"),
+            None,
+        ]
     )
 
     sent_count, failed_count = await broadcast_service.broadcast_message(bot, "Обновление турнира")

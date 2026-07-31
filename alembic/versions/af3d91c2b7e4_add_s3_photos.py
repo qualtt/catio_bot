@@ -28,11 +28,21 @@ def upgrade() -> None:
         sa.Column("content_type", sa.String(length=100), nullable=True),
         sa.Column("file_size", sa.BigInteger(), nullable=True),
         sa.Column("sha256", sa.String(length=64), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("storage_key", name="uq_photos_storage_key"),
     )
-    op.create_index("ix_photos_telegram_file_unique_id", "photos", ["telegram_file_unique_id"], unique=True)
+    op.create_index(
+        "ix_photos_telegram_file_unique_id",
+        "photos",
+        ["telegram_file_unique_id"],
+        unique=True,
+    )
     op.create_index("ix_photos_sha256", "photos", ["sha256"], unique=True)
 
     op.add_column("posts", sa.Column("photo_id", sa.Integer(), nullable=True))

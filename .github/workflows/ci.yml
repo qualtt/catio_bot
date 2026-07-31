@@ -1,4 +1,4 @@
-name: Tests
+name: CI/CD
 
 on:
   push:
@@ -63,3 +63,35 @@ jobs:
         ENABLE_GEMINI: "false"
       run: |
         PYTHONPATH=. pytest tests/ -v
+
+  deploy:
+    name: Deploy to Production
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy app files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "Dockerfile,alembic,alembic.ini,bot,bot_content.json,db,docker-compose.yml,requirements.txt"
+          target: "/opt/catio_bot"
+
+      - name: Run migrations and restart
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/catio_bot
+            test -f .env
+            docker compose build bot
+            docker compose run --rm bot alembic upgrade head
+            docker compose up -d --remove-orphans

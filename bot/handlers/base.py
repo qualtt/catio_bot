@@ -107,7 +107,10 @@ async def _send_stored_photo(bot: Bot, *, chat_id: int, photo: Photo, caption: s
         except TelegramBadRequest as error:
             if not _is_wrong_file_identifier(error):
                 raise
-            logger.info("Telegram file_id for photo %s is invalid, falling back to storage", photo.id)
+            logger.info(
+                "Telegram file_id for photo %s is invalid, falling back to storage",
+                photo.id,
+            )
 
     await bot.send_photo(
         chat_id=chat_id,
@@ -122,7 +125,10 @@ async def _send_photo_view(message: Message, bot: Bot, photo: Photo, *, caption:
         await _send_stored_photo(bot, chat_id=message.chat.id, photo=photo, caption=caption)
     except Exception:
         logger.exception("Failed to send photo %s", photo.id)
-        await message.answer(bot_content.message("photo_view_send_failed"), reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            bot_content.message("photo_view_send_failed"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
 
 @base_router.message(CommandStart())
@@ -132,15 +138,16 @@ async def start_handler(message: Message):
             session,
             telegram_id=message.from_user.id,
             username=message.from_user.username,
-            full_name=message.from_user.full_name
+            full_name=message.from_user.full_name,
         )
-    
+
     await answer_with_legacy_reply_keyboard_removed(
         message,
         bot_content.message("start"),
         reply_markup=get_main_menu_kb(),
         parse_mode="HTML",
     )
+
 
 @base_router.message(Command("help"))
 async def help_handler(message: Message):
@@ -218,7 +225,10 @@ async def my_posts_handler(message: Message):
 async def photo_view_handler(message: Message, bot: Bot):
     photo_id = _command_id(message.text, PHOTO_COMMAND_PATTERN)
     if photo_id is None:
-        await message.answer(bot_content.message("photo_view_not_found"), reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            bot_content.message("photo_view_not_found"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return
 
     async with async_session() as session:
@@ -231,7 +241,10 @@ async def photo_view_handler(message: Message, bot: Bot):
         )
 
     if not photo or not allowed:
-        await message.answer(bot_content.message("photo_view_not_found"), reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            bot_content.message("photo_view_not_found"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return
 
     await _send_photo_view(
@@ -246,14 +259,20 @@ async def photo_view_handler(message: Message, bot: Bot):
 async def post_view_handler(message: Message, bot: Bot):
     post_id = _command_id(message.text, POST_COMMAND_PATTERN)
     if post_id is None:
-        await message.answer(bot_content.message("post_view_not_found"), reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            bot_content.message("post_view_not_found"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return
 
     async with async_session() as session:
         post = await get_post_by_id(session, post_id)
 
     if not post or (not _is_admin(message) and (post.user is None or post.user.telegram_id != message.from_user.id)):
-        await message.answer(bot_content.message("post_view_not_found"), reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            bot_content.message("post_view_not_found"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return
 
     try:
@@ -275,7 +294,10 @@ async def post_view_handler(message: Message, bot: Bot):
             )
     except Exception:
         logger.exception("Failed to send post %s", post.id)
-        await message.answer(bot_content.message("photo_view_send_failed"), reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            bot_content.message("photo_view_send_failed"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
 
 @base_router.message(Command("random_photo"))
@@ -284,7 +306,10 @@ async def random_photo_handler(message: Message, bot: Bot):
         photo = await get_random_public_photo(session)
 
     if not photo:
-        await message.answer(bot_content.message("random_photo_not_found"), reply_markup=ReplyKeyboardRemove())
+        await message.answer(
+            bot_content.message("random_photo_not_found"),
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return
 
     await _send_photo_view(

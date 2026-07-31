@@ -1,4 +1,3 @@
-
 import pytest
 
 from bot.services import scoring

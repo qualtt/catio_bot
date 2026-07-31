@@ -36,27 +36,39 @@ def _add_album_nav_buttons(builder: InlineKeyboardBuilder, *, with_album_nav: bo
 
 def get_photo_dashboard_kb(*, is_album: bool, can_submit: bool, album_length: int = 1) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    
+
     auto_points = int(config.SCORE_APPROVED_POST_BASE * (1 + config.SCORE_AUTO_BONUS_PERCENT / 100.0))
     manual_points = config.SCORE_APPROVED_POST_BASE
     all_auto_points = auto_points * max(1, album_length)
 
     # Row 1: Change type
     builder.button(text=bot_content.button("dash_change_type"), callback_data="dash_change_type")
-    
+
     # Row 2: Set auto, Set manual
-    builder.button(text=bot_content.button("dash_set_auto", points=auto_points), callback_data="dash_set_auto")
-    builder.button(text=bot_content.button("dash_set_manual", points=manual_points), callback_data="dash_set_manual")
-    
+    builder.button(
+        text=bot_content.button("dash_set_auto", points=auto_points),
+        callback_data="dash_set_auto",
+    )
+    builder.button(
+        text=bot_content.button("dash_set_manual", points=manual_points),
+        callback_data="dash_set_manual",
+    )
+
     # Row 3: Album Nav
     if is_album:
         _add_album_nav_buttons(builder, with_album_nav=True)
-    
+
     # Row 4: Submit (or Auto All for albums)
     if is_album:
-        builder.button(text=bot_content.button("dash_auto_all", points=all_auto_points), callback_data="dash_album_auto_all")
+        builder.button(
+            text=bot_content.button("dash_auto_all", points=all_auto_points),
+            callback_data="dash_album_auto_all",
+        )
         if can_submit:
-            builder.button(text=bot_content.button("dash_submit_album"), callback_data="dash_submit_album")
+            builder.button(
+                text=bot_content.button("dash_submit_album"),
+                callback_data="dash_submit_album",
+            )
             builder.adjust(1, 1, 1, 2, 1, 1)
         else:
             builder.adjust(1, 1, 1, 2, 1)
@@ -66,7 +78,7 @@ def get_photo_dashboard_kb(*, is_album: bool, can_submit: bool, album_length: in
             builder.adjust(1, 1, 1, 1)
         else:
             builder.adjust(1, 1, 1)
-            
+
     return builder.as_markup()
 
 
@@ -79,7 +91,10 @@ async def get_animal_type_kb(*, with_album_nav: bool = False) -> InlineKeyboardM
         builder.button(text=animal_type.name, callback_data=f"animal_id_{animal_type.id}")
     builder.button(text=bot_content.other_animal_label(), callback_data="animal_other")
     _add_album_nav_buttons(builder, with_album_nav=with_album_nav)
-    builder.adjust(*_two_column_rows(len(animal_types), footer_count=1), *([2] if with_album_nav else []))
+    builder.adjust(
+        *_two_column_rows(len(animal_types), footer_count=1),
+        *([2] if with_album_nav else []),
+    )
     return builder.as_markup()
 
 
@@ -93,8 +108,12 @@ async def get_other_animal_type_kb(*, with_album_nav: bool = False) -> InlineKey
     builder.button(text=bot_content.button("custom_animal_type"), callback_data="animal_custom")
     builder.button(text=bot_content.button("back"), callback_data="animal_back")
     _add_album_nav_buttons(builder, with_album_nav=with_album_nav)
-    builder.adjust(*_two_column_rows(len(animal_types), footer_count=2), *([2] if with_album_nav else []))
+    builder.adjust(
+        *_two_column_rows(len(animal_types), footer_count=2),
+        *([2] if with_album_nav else []),
+    )
     return builder.as_markup()
+
 
 def get_schedule_choice_kb(*, auto_date: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -114,11 +133,15 @@ def get_schedule_choice_kb(*, auto_date: str | None = None) -> InlineKeyboardMar
     builder.adjust(1)
     return builder.as_markup()
 
+
 def get_admin_approval_kb(post_id: int, user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("approve"), callback_data=f"admin_approve_{post_id}")
     builder.button(text=bot_content.button("reject"), callback_data=f"admin_reject_{post_id}")
-    builder.button(text=bot_content.button("change_animal"), callback_data=f"admin_change_{post_id}")
+    builder.button(
+        text=bot_content.button("change_animal"),
+        callback_data=f"admin_change_{post_id}",
+    )
     builder.button(text="🔇 Замутить", callback_data=f"admin_mute_{user_id}")
     builder.adjust(2, 1, 1)
     return builder.as_markup()
@@ -128,25 +151,41 @@ def get_admin_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("admin_schedule"), callback_data="admin_schedule_today")
     builder.button(text=bot_content.button("admin_stats"), callback_data="admin_stats")
-    builder.button(text=bot_content.button("admin_broadcast"), callback_data="admin_broadcast_start")
+    builder.button(
+        text=bot_content.button("admin_broadcast"),
+        callback_data="admin_broadcast_start",
+    )
     builder.button(text="Замученные пользователи", callback_data="admin_muted")
     builder.adjust(1)
     return builder.as_markup()
+
 
 def get_broadcast_audience_kb(has_active_tournament: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="📢 Всем пользователям", callback_data="admin_broadcast_all")
     if has_active_tournament:
-        builder.button(text="🏆 Кто еще не голосовал в турнире", callback_data="admin_broadcast_unvoted")
-    builder.button(text=bot_content.button("admin_broadcast_cancel"), callback_data="admin_broadcast_cancel")
+        builder.button(
+            text="🏆 Кто еще не голосовал в турнире",
+            callback_data="admin_broadcast_unvoted",
+        )
+    builder.button(
+        text=bot_content.button("admin_broadcast_cancel"),
+        callback_data="admin_broadcast_cancel",
+    )
     builder.adjust(1)
     return builder.as_markup()
 
 
 def get_admin_broadcast_confirm_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text=bot_content.button("admin_broadcast_send"), callback_data="admin_broadcast_send")
-    builder.button(text=bot_content.button("admin_broadcast_cancel"), callback_data="admin_broadcast_cancel")
+    builder.button(
+        text=bot_content.button("admin_broadcast_send"),
+        callback_data="admin_broadcast_send",
+    )
+    builder.button(
+        text=bot_content.button("admin_broadcast_cancel"),
+        callback_data="admin_broadcast_cancel",
+    )
     builder.adjust(2)
     return builder.as_markup()
 
@@ -242,8 +281,14 @@ def get_admin_album_view_kb(posts, current_post) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     ordered_posts = sorted(posts, key=lambda item: item.submission_group_index or item.id)
     if len(ordered_posts) > 1:
-        builder.button(text=bot_content.button("album_prev"), callback_data=f"admin_album_prev_{current_post.id}")
-        builder.button(text=bot_content.button("album_next"), callback_data=f"admin_album_next_{current_post.id}")
+        builder.button(
+            text=bot_content.button("album_prev"),
+            callback_data=f"admin_album_prev_{current_post.id}",
+        )
+        builder.button(
+            text=bot_content.button("album_next"),
+            callback_data=f"admin_album_next_{current_post.id}",
+        )
 
     if current_post.status == PostStatus.PENDING:
         number = current_post.submission_group_index or 1
@@ -265,7 +310,7 @@ def get_admin_album_view_kb(posts, current_post) -> InlineKeyboardMarkup:
         row_sizes.append(3)
         builder.button(text="🔇 Замутить", callback_data=f"admin_mute_{current_post.user_id}")
         row_sizes.append(1)
-        
+
     if row_sizes:
         builder.adjust(*row_sizes)
     return builder.as_markup()
@@ -297,7 +342,7 @@ def get_admin_album_kb(posts) -> InlineKeyboardMarkup | None:
         )
     builder.adjust(*([3] * len(pending_posts)))
     builder.button(text="🔇 Замутить", callback_data=f"admin_mute_{posts[0].user_id}")
-    
+
     # Adust again to put the mute button on its own row
     row_sizes = [3] * len(pending_posts) + [1]
     builder.adjust(*row_sizes)
@@ -312,8 +357,14 @@ async def get_admin_animal_change_kb(post_id: int) -> InlineKeyboardMarkup:
     animal_types: list[AnimalTypeOption] = [*primary_types, *other_types]
 
     for animal_type in animal_types:
-        builder.button(text=animal_type.name, callback_data=f"admin_setanimal_{post_id}_{animal_type.id}")
-    builder.button(text=bot_content.button("custom_animal_type"), callback_data=f"admin_customanimal_{post_id}")
+        builder.button(
+            text=animal_type.name,
+            callback_data=f"admin_setanimal_{post_id}_{animal_type.id}",
+        )
+    builder.button(
+        text=bot_content.button("custom_animal_type"),
+        callback_data=f"admin_customanimal_{post_id}",
+    )
     builder.button(text=bot_content.button("back"), callback_data=f"admin_back_{post_id}")
     builder.adjust(*_two_column_rows(len(animal_types), footer_count=2))
     return builder.as_markup()
@@ -363,7 +414,10 @@ async def get_identification_other_animal_type_kb() -> InlineKeyboardMarkup:
         animal_types = await get_animal_type_options(session, is_primary=False)
 
     for animal_type in animal_types:
-        builder.button(text=animal_type.name, callback_data=f"identify_animal_extra_id_{animal_type.id}")
+        builder.button(
+            text=animal_type.name,
+            callback_data=f"identify_animal_extra_id_{animal_type.id}",
+        )
     builder.button(text=bot_content.button("custom_animal_type"), callback_data="identify_custom")
     builder.button(text=bot_content.button("back"), callback_data="identify_back")
     builder.adjust(*_two_column_rows(len(animal_types), footer_count=2))
@@ -391,15 +445,16 @@ def get_identification_batch_view_kb(batch, current_item) -> InlineKeyboardMarku
         )
 
     toggle_button = (
-        "identification_batch_include"
-        if current_item.status == ITEM_REJECTED
-        else "identification_batch_exclude"
+        "identification_batch_include" if current_item.status == ITEM_REJECTED else "identification_batch_exclude"
     )
     builder.button(
         text=bot_content.button(toggle_button),
         callback_data=f"ident_item_{batch.id}_{current_item.item_number}",
     )
-    builder.button(text=bot_content.button("identification_batch_done"), callback_data=f"ident_batch_done_{batch.id}")
+    builder.button(
+        text=bot_content.button("identification_batch_done"),
+        callback_data=f"ident_batch_done_{batch.id}",
+    )
     builder.button(
         text=bot_content.button("identification_batch_reject"),
         callback_data=f"ident_batch_reject_{batch.id}",
@@ -419,7 +474,10 @@ def get_identification_batch_kb(batch) -> InlineKeyboardMarkup:
             text=f"{prefix} {item.item_number}",
             callback_data=f"ident_item_{batch.id}_{item.item_number}",
         )
-    builder.button(text=bot_content.button("identification_batch_done"), callback_data=f"ident_batch_done_{batch.id}")
+    builder.button(
+        text=bot_content.button("identification_batch_done"),
+        callback_data=f"ident_batch_done_{batch.id}",
+    )
     builder.button(
         text=bot_content.button("identification_batch_reject"),
         callback_data=f"ident_batch_reject_{batch.id}",
@@ -430,7 +488,10 @@ def get_identification_batch_kb(batch) -> InlineKeyboardMarkup:
 
 def get_tournament_start_kb(tournament_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text=bot_content.button("tournament_vote"), callback_data=f"tourn_open_{tournament_id}")
+    builder.button(
+        text=bot_content.button("tournament_vote"),
+        callback_data=f"tourn_open_{tournament_id}",
+    )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -445,22 +506,25 @@ def get_tournament_match_kb(match, *, left_entry_id: int, right_entry_id: int) -
         text=bot_content.button("tournament_pick_right"),
         callback_data=f"tourn_vote_{match.id}_{right_entry_id}",
     )
-    builder.button(text=bot_content.button("tournament_refresh"), callback_data=f"tourn_open_{match.tournament_id}")
+    builder.button(
+        text=bot_content.button("tournament_refresh"),
+        callback_data=f"tourn_open_{match.tournament_id}",
+    )
     builder.adjust(2, 1)
     return builder.as_markup()
 
 
 def get_leaderboard_kb(current_tab: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    
+
     score_text = bot_content.button("top_tab_score")
     if current_tab == "score":
         score_text = f"• {score_text} •"
-        
+
     posts_text = bot_content.button("top_tab_posts")
     if current_tab == "posts":
         posts_text = f"• {posts_text} •"
-        
+
     builder.button(text=score_text, callback_data="top_score")
     builder.button(text=posts_text, callback_data="top_posts")
     builder.adjust(2)

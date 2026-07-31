@@ -54,13 +54,15 @@ async def admin_muted_command(message: Message):
         return
     async with async_session() as session:
         from db.crud import get_muted_users
+
         users = await get_muted_users(session)
-        
+
     if not users:
         await message.answer("Нет замученных пользователей.")
         return
-        
+
     from bot.keyboards.inline import get_muted_users_kb
+
     await message.answer("Список замученных пользователей:", reply_markup=get_muted_users_kb(users))
 
 
@@ -79,5 +81,3 @@ async def admin_broadcast_command(message: Message, state: FSMContext):
         await message.answer(bot_content.message("not_admin"))
         return
     await _start_broadcast_prompt(message, state)
-
-

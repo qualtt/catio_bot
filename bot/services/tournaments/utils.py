@@ -47,9 +47,12 @@ def tournament_status_label(status: str) -> str:
 
 
 async def tournament_status_text(session: AsyncSession, tournament: PhotoTournament) -> str:
-    entry_count = await session.scalar(
-        select(func.count(PhotoTournamentEntry.id)).where(PhotoTournamentEntry.tournament_id == tournament.id)
-    ) or 0
+    entry_count = (
+        await session.scalar(
+            select(func.count(PhotoTournamentEntry.id)).where(PhotoTournamentEntry.tournament_id == tournament.id)
+        )
+        or 0
+    )
     return bot_content.message(
         "tournament_status",
         tournament_type=tournament_type_label(tournament.type),
@@ -71,7 +74,9 @@ async def tournament_results_text(session: AsyncSession, tournament: PhotoTourna
     )
 
 
-def last_completed_week_period(now: datetime | None = None) -> tuple[datetime, datetime]:
+def last_completed_week_period(
+    now: datetime | None = None,
+) -> tuple[datetime, datetime]:
     current = ensure_app_timezone(now or now_in_app_tz())
     current_monday = combine_slot(current.date() - timedelta(days=current.weekday()), time.min)
     return current_monday - timedelta(days=7), current_monday
@@ -96,5 +101,3 @@ def _bracket_round_count(entry_count: int) -> int:
         remaining = (remaining + 1) // 2
         rounds += 1
     return rounds
-
-

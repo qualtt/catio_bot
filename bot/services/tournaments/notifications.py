@@ -46,9 +46,12 @@ async def send_tournament_notifications(
     if tournament.status != TOURNAMENT_RUNNING or tournament.notification_sent_at is not None:
         return 0
 
-    entry_count = await session.scalar(
-        select(func.count(PhotoTournamentEntry.id)).where(PhotoTournamentEntry.tournament_id == tournament.id)
-    ) or 0
+    entry_count = (
+        await session.scalar(
+            select(func.count(PhotoTournamentEntry.id)).where(PhotoTournamentEntry.tournament_id == tournament.id)
+        )
+        or 0
+    )
 
     notified_user_ids = {
         user_id
@@ -62,11 +65,7 @@ async def send_tournament_notifications(
     }
     users = list((await session.execute(select(User).order_by(User.id.asc()))).scalars())
     sent_count = 0
-    message_key = (
-        "tournament_monthly_invite"
-        if tournament.type == TOURNAMENT_MONTHLY
-        else "tournament_weekly_invite"
-    )
+    message_key = "tournament_monthly_invite" if tournament.type == TOURNAMENT_MONTHLY else "tournament_weekly_invite"
 
     for user in users:
         if user.id in notified_user_ids:
@@ -184,5 +183,3 @@ async def send_pending_tournament_results_notifications(bot: Bot, session: Async
                     sent_count,
                 )
     return notified_tournaments
-
-

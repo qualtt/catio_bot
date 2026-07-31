@@ -18,11 +18,28 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("channel_history", sa.Column("suggested_animal_type", sa.String(length=50), nullable=True))
-    op.add_column("channel_history", sa.Column("review_status", sa.String(length=20), nullable=True))
-    op.add_column("channel_history", sa.Column("review_sent_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("channel_history", sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True))
-    op.create_index("ix_channel_history_review_status", "channel_history", ["review_status"], unique=False)
+    op.add_column(
+        "channel_history",
+        sa.Column("suggested_animal_type", sa.String(length=50), nullable=True),
+    )
+    op.add_column(
+        "channel_history",
+        sa.Column("review_status", sa.String(length=20), nullable=True),
+    )
+    op.add_column(
+        "channel_history",
+        sa.Column("review_sent_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "channel_history",
+        sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.create_index(
+        "ix_channel_history_review_status",
+        "channel_history",
+        ["review_status"],
+        unique=False,
+    )
 
     op.create_table(
         "score_events",
@@ -45,7 +62,12 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_score_events_event_type", "score_events", ["event_type"], unique=False)
-    op.create_index("ix_score_events_user_created_at", "score_events", ["user_id", "created_at"], unique=False)
+    op.create_index(
+        "ix_score_events_user_created_at",
+        "score_events",
+        ["user_id", "created_at"],
+        unique=False,
+    )
 
     op.create_table(
         "photo_identification_assignments",
@@ -153,11 +175,20 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("photo_identification_batch_items")
 
-    op.drop_index("ix_photo_identification_batches_status", table_name="photo_identification_batches")
+    op.drop_index(
+        "ix_photo_identification_batches_status",
+        table_name="photo_identification_batches",
+    )
     op.drop_table("photo_identification_batches")
 
-    op.drop_index("ix_photo_identification_votes_user_created_at", table_name="photo_identification_votes")
-    op.drop_index("ix_photo_identification_votes_item_reviewed", table_name="photo_identification_votes")
+    op.drop_index(
+        "ix_photo_identification_votes_user_created_at",
+        table_name="photo_identification_votes",
+    )
+    op.drop_index(
+        "ix_photo_identification_votes_item_reviewed",
+        table_name="photo_identification_votes",
+    )
     op.drop_table("photo_identification_votes")
 
     op.drop_index(

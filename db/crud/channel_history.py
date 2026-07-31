@@ -7,7 +7,9 @@ from db.models.channel_history import ChannelHistory
 
 
 async def get_channel_history_item_by_message_id(session: AsyncSession, message_id: int) -> ChannelHistory | None:
-    stmt = select(ChannelHistory).where(ChannelHistory.message_id == message_id).order_by(ChannelHistory.id.asc()).limit(1)
+    stmt = (
+        select(ChannelHistory).where(ChannelHistory.message_id == message_id).order_by(ChannelHistory.id.asc()).limit(1)
+    )
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
@@ -85,5 +87,3 @@ async def create_channel_history_item(
     await session.commit()
     await session.refresh(item)
     return item
-
-

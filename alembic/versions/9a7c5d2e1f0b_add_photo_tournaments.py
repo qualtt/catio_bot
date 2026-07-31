@@ -33,12 +33,32 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["winner_photo_id"], ["photos.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("type", "period_start", "period_end", name="uq_photo_tournaments_type_period"),
+        sa.UniqueConstraint(
+            "type",
+            "period_start",
+            "period_end",
+            name="uq_photo_tournaments_type_period",
+        ),
     )
-    op.create_index("ix_photo_tournaments_period_start", "photo_tournaments", ["period_start"], unique=False)
-    op.create_index("ix_photo_tournaments_period_end", "photo_tournaments", ["period_end"], unique=False)
+    op.create_index(
+        "ix_photo_tournaments_period_start",
+        "photo_tournaments",
+        ["period_start"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_photo_tournaments_period_end",
+        "photo_tournaments",
+        ["period_end"],
+        unique=False,
+    )
     op.create_index("ix_photo_tournaments_status", "photo_tournaments", ["status"], unique=False)
-    op.create_index("ix_photo_tournaments_type_status", "photo_tournaments", ["type", "status"], unique=False)
+    op.create_index(
+        "ix_photo_tournaments_type_status",
+        "photo_tournaments",
+        ["type", "status"],
+        unique=False,
+    )
 
     op.create_table(
         "photo_tournament_entries",
@@ -57,7 +77,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["source_weekly_tournament_id"], ["photo_tournaments.id"]),
         sa.ForeignKeyConstraint(["tournament_id"], ["photo_tournaments.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("tournament_id", "photo_id", name="uq_photo_tournament_entries_tournament_photo"),
+        sa.UniqueConstraint(
+            "tournament_id",
+            "photo_id",
+            name="uq_photo_tournament_entries_tournament_photo",
+        ),
         sa.UniqueConstraint("tournament_id", "seed", name="uq_photo_tournament_entries_tournament_seed"),
     )
     op.create_index(
@@ -84,7 +108,11 @@ def upgrade() -> None:
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["tournament_id"], ["photo_tournaments.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("tournament_id", "round_number", name="uq_photo_tournament_rounds_tournament_number"),
+        sa.UniqueConstraint(
+            "tournament_id",
+            "round_number",
+            name="uq_photo_tournament_rounds_tournament_number",
+        ),
     )
     op.create_index(
         "ix_photo_tournament_rounds_status_ends_at",
@@ -139,7 +167,11 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["tournament_id"], ["photo_tournaments.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("tournament_id", "user_id", name="uq_photo_tournament_notifications_tournament_user"),
+        sa.UniqueConstraint(
+            "tournament_id",
+            "user_id",
+            name="uq_photo_tournament_notifications_tournament_user",
+        ),
     )
     op.create_index(
         "ix_photo_tournament_notifications_status",
@@ -182,18 +214,36 @@ def downgrade() -> None:
     op.drop_index("ix_photo_tournament_votes_tournament_user", table_name="photo_tournament_votes")
     op.drop_table("photo_tournament_votes")
 
-    op.drop_index("ix_photo_tournament_notifications_status", table_name="photo_tournament_notifications")
+    op.drop_index(
+        "ix_photo_tournament_notifications_status",
+        table_name="photo_tournament_notifications",
+    )
     op.drop_table("photo_tournament_notifications")
 
-    op.drop_index("ix_photo_tournament_matches_tournament_status", table_name="photo_tournament_matches")
-    op.drop_index("ix_photo_tournament_matches_round_status", table_name="photo_tournament_matches")
+    op.drop_index(
+        "ix_photo_tournament_matches_tournament_status",
+        table_name="photo_tournament_matches",
+    )
+    op.drop_index(
+        "ix_photo_tournament_matches_round_status",
+        table_name="photo_tournament_matches",
+    )
     op.drop_table("photo_tournament_matches")
 
-    op.drop_index("ix_photo_tournament_rounds_status_ends_at", table_name="photo_tournament_rounds")
+    op.drop_index(
+        "ix_photo_tournament_rounds_status_ends_at",
+        table_name="photo_tournament_rounds",
+    )
     op.drop_table("photo_tournament_rounds")
 
-    op.drop_index("ix_photo_tournament_entries_tournament_status", table_name="photo_tournament_entries")
-    op.drop_index("ix_photo_tournament_entries_source_weekly", table_name="photo_tournament_entries")
+    op.drop_index(
+        "ix_photo_tournament_entries_tournament_status",
+        table_name="photo_tournament_entries",
+    )
+    op.drop_index(
+        "ix_photo_tournament_entries_source_weekly",
+        table_name="photo_tournament_entries",
+    )
     op.drop_table("photo_tournament_entries")
 
     op.drop_index("ix_photo_tournaments_type_status", table_name="photo_tournaments")

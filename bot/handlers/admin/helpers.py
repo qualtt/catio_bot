@@ -250,10 +250,10 @@ async def load_admin_stats(session) -> str:
         .order_by(func.count(Post.id).desc(), Post.animal_type.asc())
         .limit(5)
     )
-    
+
     from bot.services.tournaments.queries import get_current_tournament
     from db.crud import get_tournament_voter_count
-    
+
     current_tournament = await get_current_tournament(session)
     tournament_voters = 0
     if current_tournament:
@@ -271,7 +271,9 @@ async def load_admin_stats(session) -> str:
         published=status_counts.get(PostStatus.PUBLISHED, 0),
         today_scheduled=today_scheduled or 0,
         overdue=overdue or 0,
-        next_schedule=format_schedule(next_post.schedule_time) if next_post else bot_content.message("schedule_not_selected"),
+        next_schedule=format_schedule(next_post.schedule_time)
+        if next_post
+        else bot_content.message("schedule_not_selected"),
         animal_stats=animal_stats,
         tournament_voters=tournament_voters,
     )
@@ -311,9 +313,12 @@ async def _build_admin_reschedule_calendar(year: int, month: int, return_date: d
         availability = await get_day_availability(session, start_date=min_date, days=365)
 
     footer_buttons = [
-        (bot_content.button("cancel"), f"admin_cancel_reschedule_{return_date.isoformat()}")
+        (
+            bot_content.button("cancel"),
+            f"admin_cancel_reschedule_{return_date.isoformat()}",
+        )
     ]
-    
+
     return build_month_calendar(
         year=year,
         month=month,
@@ -322,7 +327,7 @@ async def _build_admin_reschedule_calendar(year: int, month: int, return_date: d
         max_date=max_date,
         max_slots=len(parse_daily_slot_times()),
         footer_buttons=footer_buttons,
-        prefix="admin_cal"
+        prefix="admin_cal",
     )
 
 
@@ -339,10 +344,8 @@ async def show_admin_reschedule_calendar(
 
     markup = await _build_admin_reschedule_calendar(year, month, return_date)
     text = f"Выберите дату для публикации #{post_id} (вы можете выбрать любой день):"
-    
+
     if hasattr(message_or_callback, "message") and message_or_callback.message:
         await message_or_callback.message.edit_text(text, reply_markup=markup)
     else:
         await message_or_callback.answer(text, reply_markup=markup)
-
-

@@ -165,5 +165,3 @@ async def send_admin_schedule(target, target_date: date, *, callback_text: str |
         await target.answer(callback_text)
         return
     await target.answer(text, reply_markup=reply_markup)
-
-

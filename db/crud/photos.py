@@ -85,10 +85,7 @@ async def user_can_view_photo(
 async def get_random_public_photo(session: AsyncSession) -> Photo | None:
     stmt = (
         select(Photo)
-        .where(
-            (Photo.channel_history_items.any())
-            | (Photo.posts.any(Post.status == PostStatus.PUBLISHED))
-        )
+        .where((Photo.channel_history_items.any()) | (Photo.posts.any(Post.status == PostStatus.PUBLISHED)))
         .order_by(func.random())
         .limit(1)
     )
@@ -100,7 +97,9 @@ async def photo_has_known_usage(session: AsyncSession, photo_id: int) -> bool:
     if post_count:
         return True
 
-    history_count = await session.scalar(select(func.count(ChannelHistory.id)).where(ChannelHistory.photo_id == photo_id))
+    history_count = await session.scalar(
+        select(func.count(ChannelHistory.id)).where(ChannelHistory.photo_id == photo_id)
+    )
     return bool(history_count)
 
 
@@ -114,7 +113,7 @@ async def find_duplicate_photo(
 
     has_usage = or_(
         select(Post.id).where(Post.photo_id == Photo.id).correlate(Photo).exists(),
-        select(ChannelHistory.id).where(ChannelHistory.photo_id == Photo.id).correlate(Photo).exists()
+        select(ChannelHistory.id).where(ChannelHistory.photo_id == Photo.id).correlate(Photo).exists(),
     )
 
     if photo.sha256:
@@ -128,9 +127,7 @@ async def find_duplicate_photo(
 
     threshold = config.DUPLICATE_PHASH_MAX_DISTANCE if max_distance is None else max_distance
     stmt = select(Photo.id, Photo.perceptual_hash).where(
-        Photo.id != photo.id,
-        Photo.perceptual_hash.is_not(None),
-        has_usage
+        Photo.id != photo.id, Photo.perceptual_hash.is_not(None), has_usage
     )
     result = await session.execute(stmt)
     best_match: DuplicatePhotoMatch | None = None
@@ -248,7 +245,6 @@ async def update_photo_metadata(
     return photo
 
 
-
 from datetime import datetime
 
 from sqlalchemy import delete, update
@@ -256,33 +252,31 @@ from sqlalchemy import delete, update
 
 async def get_abandoned_photos(session: AsyncSession, older_than: datetime) -> list[Photo]:
     has_usage = or_(
-        select(Post.id).where(
+        select(Post.id)
+        .where(
             Post.photo_id == Photo.id,
-            Post.status.in_([PostStatus.PENDING, PostStatus.APPROVED, PostStatus.PUBLISHED])
-        ).correlate(Photo).exists(),
-        select(ChannelHistory.id).where(ChannelHistory.photo_id == Photo.id).correlate(Photo).exists()
+            Post.status.in_([PostStatus.PENDING, PostStatus.APPROVED, PostStatus.PUBLISHED]),
+        )
+        .correlate(Photo)
+        .exists(),
+        select(ChannelHistory.id).where(ChannelHistory.photo_id == Photo.id).correlate(Photo).exists(),
     )
 
     stmt = select(Photo).where(Photo.created_at < older_than, ~has_usage)
     return list((await session.execute(stmt)).scalars().all())
 
+
 async def delete_photos(session: AsyncSession, photo_ids: list[int]) -> None:
     if not photo_ids:
         return
-    
+
     await session.execute(
-        update(Post)
-        .where(Post.photo_id.in_(photo_ids), Post.status == PostStatus.REJECTED)
-        .values(photo_id=None)
+        update(Post).where(Post.photo_id.in_(photo_ids), Post.status == PostStatus.REJECTED).values(photo_id=None)
     )
-    
+
     await session.execute(
-        update(Post)
-        .where(Post.duplicate_of_photo_id.in_(photo_ids))
-        .values(duplicate_of_photo_id=None)
+        update(Post).where(Post.duplicate_of_photo_id.in_(photo_ids)).values(duplicate_of_photo_id=None)
     )
-    
-    await session.execute(
-        delete(Photo).where(Photo.id.in_(photo_ids))
-    )
+
+    await session.execute(delete(Photo).where(Photo.id.in_(photo_ids)))
     await session.commit()

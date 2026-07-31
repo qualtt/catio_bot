@@ -259,7 +259,11 @@ async def _submit_identification_answer(
             text=text,
             reply_markup=get_identification_continue_kb(),
         ):
-            await bot.send_message(chat_id=chat_id, text=text, reply_markup=get_identification_continue_kb())
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=get_identification_continue_kb(),
+            )
         return text
 
     if source_message:
@@ -291,7 +295,11 @@ async def _submit_identification_answer(
             text=text,
             reply_markup=get_identification_continue_kb(),
         ):
-            await bot.send_message(chat_id=chat_id, text=text, reply_markup=get_identification_continue_kb())
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=get_identification_continue_kb(),
+            )
 
     return result_text
 
@@ -516,7 +524,10 @@ async def handle_identification_batch_navigation(callback: CallbackQuery):
         return
 
     items = _identification_batch_items(batch)
-    current_index = next((index for index, item in enumerate(items) if item.item_number == item_number), 0)
+    current_index = next(
+        (index for index, item in enumerate(items) if item.item_number == item_number),
+        0,
+    )
     offset = -1 if direction == "prev" else 1
     target_item = items[(current_index + offset) % len(items)]
     await _edit_identification_batch_view_message(callback.message, batch, target_item, use_media=True)

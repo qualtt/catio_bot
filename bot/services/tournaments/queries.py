@@ -157,7 +157,9 @@ async def get_current_tournament(session: AsyncSession) -> PhotoTournament | Non
     )
 
 
-async def get_latest_completed_tournament(session: AsyncSession) -> PhotoTournament | None:
+async def get_latest_completed_tournament(
+    session: AsyncSession,
+) -> PhotoTournament | None:
     return await session.scalar(
         select(PhotoTournament)
         .where(
@@ -183,7 +185,10 @@ async def get_next_open_match_for_user(
     stmt = (
         select(PhotoTournamentMatch)
         .join(PhotoTournament, PhotoTournament.id == PhotoTournamentMatch.tournament_id)
-        .join(PhotoTournamentRound, PhotoTournamentRound.id == PhotoTournamentMatch.round_id)
+        .join(
+            PhotoTournamentRound,
+            PhotoTournamentRound.id == PhotoTournamentMatch.round_id,
+        )
         .options(
             selectinload(PhotoTournamentMatch.tournament),
             selectinload(PhotoTournamentMatch.round),
@@ -251,5 +256,3 @@ async def get_user_tournament_champion_entry(
     if chosen_entry_id is None:
         return None
     return await _entry_with_photo(session, chosen_entry_id)
-
-

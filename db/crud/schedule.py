@@ -17,18 +17,24 @@ from .time_utils import (
 OCCUPYING_STATUSES = [PostStatus.PENDING, PostStatus.APPROVED, PostStatus.PUBLISHED]
 
 
-async def get_slot_counts(session: AsyncSession, start_date: date | None = None, days: int | None = None) -> dict[date, int]:
+async def get_slot_counts(
+    session: AsyncSession, start_date: date | None = None, days: int | None = None
+) -> dict[date, int]:
     start_date = start_date or now_in_app_tz().date()
     days = days or config.AUTO_POST_DAYS_AHEAD
     end_date = start_date + timedelta(days=days)
     start_dt = combine_slot(start_date, time.min)
     end_dt = combine_slot(end_date, time.min)
 
-    stmt = select(func.date(Post.schedule_time), func.count(Post.id)).where(
-        Post.status.in_(OCCUPYING_STATUSES),
-        Post.schedule_time >= start_dt,
-        Post.schedule_time < end_dt
-    ).group_by(func.date(Post.schedule_time))
+    stmt = (
+        select(func.date(Post.schedule_time), func.count(Post.id))
+        .where(
+            Post.status.in_(OCCUPYING_STATUSES),
+            Post.schedule_time >= start_dt,
+            Post.schedule_time < end_dt,
+        )
+        .group_by(func.date(Post.schedule_time))
+    )
 
     result = await session.execute(stmt)
     counts: dict[date, int] = {}
@@ -43,7 +49,9 @@ async def get_slot_counts(session: AsyncSession, start_date: date | None = None,
     return counts
 
 
-async def get_occupied_dates(session: AsyncSession, start_date: date | None = None, days: int | None = None) -> set[date]:
+async def get_occupied_dates(
+    session: AsyncSession, start_date: date | None = None, days: int | None = None
+) -> set[date]:
     start_date = start_date or now_in_app_tz().date()
     days = days or config.AUTO_POST_DAYS_AHEAD
     end_date = start_date + timedelta(days=days)
@@ -56,14 +64,12 @@ async def get_occupied_dates(session: AsyncSession, start_date: date | None = No
         Post.schedule_time < end_dt,
     )
     result = await session.execute(stmt)
-    return {
-        ensure_app_timezone(scheduled_at).date()
-        for scheduled_at in result.scalars()
-        if scheduled_at is not None
-    }
+    return {ensure_app_timezone(scheduled_at).date() for scheduled_at in result.scalars() if scheduled_at is not None}
 
 
-async def get_day_availability(session: AsyncSession, start_date: date | None = None, days: int | None = None) -> dict[date, int]:
+async def get_day_availability(
+    session: AsyncSession, start_date: date | None = None, days: int | None = None
+) -> dict[date, int]:
     start_date = start_date or now_in_app_tz().date()
     days = days or config.AUTO_POST_DAYS_AHEAD
     max_slots = len(parse_daily_slot_times())
@@ -92,11 +98,7 @@ async def get_free_slot_times(session: AsyncSession, target_date: date) -> list[
         if scheduled_at is not None
     }
 
-    return [
-        slot_time
-        for slot_time in parse_daily_slot_times()
-        if slot_time.strftime("%H:%M") not in occupied
-    ]
+    return [slot_time for slot_time in parse_daily_slot_times() if slot_time.strftime("%H:%M") not in occupied]
 
 
 async def get_schedule_occupancy(
@@ -184,8 +186,7 @@ async def get_next_auto_slot(
         free_slots = [
             slot_time
             for slot_time in slot_times
-            if slot_time.strftime("%H:%M") not in occupied_for_day
-            and combine_slot(curr_date, slot_time) >= start_at
+            if slot_time.strftime("%H:%M") not in occupied_for_day and combine_slot(curr_date, slot_time) >= start_at
         ]
         if not free_slots:
             continue
@@ -204,5 +205,3 @@ async def get_next_auto_slot(
             return combine_slot(curr_date, free_slots[0])
 
     return combine_slot(start_date + timedelta(days=max_days_to_scan), first_slot)
-
-

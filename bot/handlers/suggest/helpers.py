@@ -66,7 +66,7 @@ def _photo_dashboard_text(data: dict, *, is_album: bool) -> str:
         item = data
         total = 1
         display_index = 1
-        
+
     gemini = item.get("gemini")
     gemini_text = ""
     if gemini:
@@ -90,7 +90,7 @@ def _photo_dashboard_text(data: dict, *, is_album: bool) -> str:
         animal_type=animal_type,
         schedule_time=schedule_time,
     )
-    
+
     # Remove index header for single photos
     if not is_album:
         text = text.replace(f"📸 Фото {display_index} из {total}\n\n", "")
@@ -100,6 +100,7 @@ def _photo_dashboard_text(data: dict, *, is_album: bool) -> str:
         item.get("duplicate_of_photo_id"),
         item.get("duplicate_distance"),
     )
+
 
 def _album_animal_summary(items: list[dict]) -> str:
     return "\n".join(
@@ -132,11 +133,15 @@ def _parse_album_schedule_time(value) -> datetime | None:
     return None
 
 
-def _serialize_album_schedule_times(schedule_times: list[datetime | None]) -> list[str | None]:
+def _serialize_album_schedule_times(
+    schedule_times: list[datetime | None],
+) -> list[str | None]:
     return [schedule_time.isoformat() if schedule_time else None for schedule_time in schedule_times]
 
 
-def _album_schedule_context(data: dict) -> tuple[list[dict], list[datetime | None], list[bool], int]:
+def _album_schedule_context(
+    data: dict,
+) -> tuple[list[dict], list[datetime | None], list[bool], int]:
     items = _album_items(data)
     count = len(items)
 
@@ -204,7 +209,6 @@ def _album_selected_slots(data: dict, *, exclude_index: int | None = None) -> se
         for index, schedule_time in enumerate(schedule_times)
         if schedule_time is not None and index != exclude_index
     }
-
 
 
 def _album_schedule_prompt_kwargs(data: dict) -> dict:
@@ -366,13 +370,35 @@ async def _normalize_custom_animal_type_text(message: Message) -> str | None:
         return None
 
     if len(animal_type) > max_length:
-        await message.answer(
-            bot_content.message("custom_animal_type_too_long", max_length=max_length)
-        )
+        await message.answer(bot_content.message("custom_animal_type_too_long", max_length=max_length))
         return None
 
     return animal_type
 
 
-
-__all__ = ['_album_animal_summary', '_album_items', '_album_schedule_context', '_album_schedule_prompt_kwargs', '_album_schedule_state', '_album_schedule_summary', '_album_selected_slots', '_build_calendar_markup', '_edit_bot_message_text_or_caption', '_edit_callback_prompt', '_edit_message_text_or_caption', '_filter_selected_album_times', '_format_schedule', '_is_album_submission', '_next_unscheduled_index', '_next_untyped_album_index', '_normalize_custom_animal_type_text', '_parse_album_schedule_time', '_photo_dashboard_text', '_serialize_album_schedule_times', '_show_album_schedule_calendar', '_subtract_selected_album_slots', 'logger', 'user_display']
+__all__ = [
+    "_album_animal_summary",
+    "_album_items",
+    "_album_schedule_context",
+    "_album_schedule_prompt_kwargs",
+    "_album_schedule_state",
+    "_album_schedule_summary",
+    "_album_selected_slots",
+    "_build_calendar_markup",
+    "_edit_bot_message_text_or_caption",
+    "_edit_callback_prompt",
+    "_edit_message_text_or_caption",
+    "_filter_selected_album_times",
+    "_format_schedule",
+    "_is_album_submission",
+    "_next_unscheduled_index",
+    "_next_untyped_album_index",
+    "_normalize_custom_animal_type_text",
+    "_parse_album_schedule_time",
+    "_photo_dashboard_text",
+    "_serialize_album_schedule_times",
+    "_show_album_schedule_calendar",
+    "_subtract_selected_album_slots",
+    "logger",
+    "user_display",
+]

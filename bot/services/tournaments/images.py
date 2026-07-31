@@ -63,12 +63,12 @@ async def tournament_match_photo_input(view: TournamentMatchView) -> BufferedInp
     )
 
 
-async def tournament_entry_photo_input(entry: PhotoTournamentEntry) -> BufferedInputFile:
+async def tournament_entry_photo_input(
+    entry: PhotoTournamentEntry,
+) -> BufferedInputFile:
     photo = entry.photo
     photo_data = await download_photo(
         storage_bucket=photo.storage_bucket,
         storage_key=photo.storage_key,
     )
     return BufferedInputFile(photo_data, filename=f"tournament-entry-{entry.id}.jpg")
-
-

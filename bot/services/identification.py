@@ -68,9 +68,7 @@ async def get_active_identification_assignment(
     now = now_in_app_tz()
     stmt = (
         select(PhotoIdentificationAssignment)
-        .options(
-            selectinload(PhotoIdentificationAssignment.channel_history).selectinload(ChannelHistory.photo)
-        )
+        .options(selectinload(PhotoIdentificationAssignment.channel_history).selectinload(ChannelHistory.photo))
         .where(
             PhotoIdentificationAssignment.user_id == user_id,
             PhotoIdentificationAssignment.status == ASSIGNMENT_ASSIGNED,
@@ -133,10 +131,18 @@ async def assign_next_identification_item(
         .where(
             ChannelHistory.photo_id.is_not(None),
             ChannelHistory.animal_type.is_(None),
-            or_(ChannelHistory.review_status.is_(None), ChannelHistory.review_status == REVIEW_OPEN),
+            or_(
+                ChannelHistory.review_status.is_(None),
+                ChannelHistory.review_status == REVIEW_OPEN,
+            ),
             ~user_vote_exists,
             ~user_assignment_exists,
-            pending_vote_count < max(config.IDENTIFICATION_MAX_VOTES_PER_PHOTO, config.IDENTIFICATION_VOTES_REQUIRED, 1),
+            pending_vote_count
+            < max(
+                config.IDENTIFICATION_MAX_VOTES_PER_PHOTO,
+                config.IDENTIFICATION_VOTES_REQUIRED,
+                1,
+            ),
             active_assignment_count < max(config.IDENTIFICATION_MAX_ACTIVE_ASSIGNMENTS_PER_PHOTO, 1),
         )
         .order_by(pending_vote_count.desc(), ChannelHistory.id.asc())
@@ -204,11 +210,17 @@ async def queue_identification_item_if_ready(
 async def queue_ready_identification_items(session: AsyncSession, *, limit: int = 500) -> int:
     stmt = (
         select(ChannelHistory.id)
-        .join(PhotoIdentificationVote, PhotoIdentificationVote.channel_history_id == ChannelHistory.id)
+        .join(
+            PhotoIdentificationVote,
+            PhotoIdentificationVote.channel_history_id == ChannelHistory.id,
+        )
         .where(
             ChannelHistory.photo_id.is_not(None),
             ChannelHistory.animal_type.is_(None),
-            or_(ChannelHistory.review_status.is_(None), ChannelHistory.review_status == REVIEW_OPEN),
+            or_(
+                ChannelHistory.review_status.is_(None),
+                ChannelHistory.review_status == REVIEW_OPEN,
+            ),
             PhotoIdentificationVote.reviewed_at.is_(None),
         )
         .group_by(ChannelHistory.id)
@@ -236,7 +248,10 @@ async def submit_identification_vote(
         await session.commit()
         return VoteResult(vote=None, created=False, queued_for_review=False)
 
-    if assignment.channel_history.animal_type is not None or assignment.channel_history.review_status == REVIEW_APPROVED:
+    if (
+        assignment.channel_history.animal_type is not None
+        or assignment.channel_history.review_status == REVIEW_APPROVED
+    ):
         assignment.status = ASSIGNMENT_EXPIRED
         await session.commit()
         return VoteResult(vote=None, created=False, queued_for_review=False)
@@ -281,8 +296,9 @@ async def create_ready_identification_batches(
     last_vote_time = await session.scalar(select(func.max(PhotoIdentificationVote.created_at)))
     if last_vote_time is not None:
         from db.crud.time_utils import ensure_app_timezone
+
         last_vote_time = ensure_app_timezone(last_vote_time)
-        
+
     if last_vote_time is not None and now - last_vote_time >= timedelta(minutes=5):
         min_size = 1
     else:
@@ -298,7 +314,10 @@ async def create_ready_identification_batches(
         )
         .group_by(ChannelHistory.suggested_animal_type)
         .having(func.count(ChannelHistory.id) >= min_size)
-        .order_by(func.count(ChannelHistory.id).desc(), ChannelHistory.suggested_animal_type.asc())
+        .order_by(
+            func.count(ChannelHistory.id).desc(),
+            ChannelHistory.suggested_animal_type.asc(),
+        )
         .limit(max_batches)
     )
 

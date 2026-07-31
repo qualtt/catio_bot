@@ -18,6 +18,7 @@ class PostStatus(str, enum.Enum):
     REJECTED = "rejected"
     PUBLISHED = "published"
 
+
 class Post(Base):
     __tablename__ = "posts"
 

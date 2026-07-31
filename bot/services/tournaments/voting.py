@@ -91,8 +91,14 @@ async def _favorite_photo_id(
     row = (
         await session.execute(
             select(PhotoTournamentEntry.photo_id, func.count())
-            .join(PhotoTournamentVote, PhotoTournamentVote.chosen_entry_id == PhotoTournamentEntry.id)
-            .join(PhotoTournamentMatch, PhotoTournamentMatch.id == PhotoTournamentVote.match_id)
+            .join(
+                PhotoTournamentVote,
+                PhotoTournamentVote.chosen_entry_id == PhotoTournamentEntry.id,
+            )
+            .join(
+                PhotoTournamentMatch,
+                PhotoTournamentMatch.id == PhotoTournamentVote.match_id,
+            )
             .where(PhotoTournamentMatch.tournament_id == tournament_id)
             .group_by(PhotoTournamentEntry.photo_id)
             .order_by(func.count().desc(), PhotoTournamentEntry.photo_id.asc())
@@ -138,11 +144,7 @@ async def _user_match_choice_entry(
     user_id: int,
     match: PhotoTournamentMatch,
 ) -> PhotoTournamentEntry | None:
-    if (
-        match.feeder_left_match_id is not None
-        and match.feeder_right_match_id is None
-        and match.status == MATCH_OPEN
-    ):
+    if match.feeder_left_match_id is not None and match.feeder_right_match_id is None and match.status == MATCH_OPEN:
         feeder = await _match_with_feeder_entries(session, match.feeder_left_match_id)
         if feeder is None:
             return None
@@ -264,5 +266,3 @@ async def submit_tournament_vote(
         created=True,
         tournament_id=match.tournament_id,
     )
-
-

@@ -19,7 +19,10 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("photo_tournaments", sa.Column("favorite_photo_id", sa.Integer(), nullable=True))
-    op.add_column("photo_tournaments", sa.Column("voting_ends_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "photo_tournaments",
+        sa.Column("voting_ends_at", sa.DateTime(timezone=True), nullable=True),
+    )
     op.create_foreign_key(
         "fk_photo_tournaments_favorite_photo_id",
         "photo_tournaments",
@@ -27,8 +30,14 @@ def upgrade() -> None:
         ["favorite_photo_id"],
         ["id"],
     )
-    op.add_column("photo_tournament_matches", sa.Column("feeder_left_match_id", sa.Integer(), nullable=True))
-    op.add_column("photo_tournament_matches", sa.Column("feeder_right_match_id", sa.Integer(), nullable=True))
+    op.add_column(
+        "photo_tournament_matches",
+        sa.Column("feeder_left_match_id", sa.Integer(), nullable=True),
+    )
+    op.add_column(
+        "photo_tournament_matches",
+        sa.Column("feeder_right_match_id", sa.Integer(), nullable=True),
+    )
     op.create_foreign_key(
         "fk_photo_tournament_matches_feeder_left_match_id",
         "photo_tournament_matches",
@@ -43,15 +52,37 @@ def upgrade() -> None:
         ["feeder_right_match_id"],
         ["id"],
     )
-    op.alter_column("photo_tournament_matches", "left_entry_id", existing_type=sa.Integer(), nullable=True)
+    op.alter_column(
+        "photo_tournament_matches",
+        "left_entry_id",
+        existing_type=sa.Integer(),
+        nullable=True,
+    )
 
 
 def downgrade() -> None:
-    op.alter_column("photo_tournament_matches", "left_entry_id", existing_type=sa.Integer(), nullable=False)
-    op.drop_constraint("fk_photo_tournament_matches_feeder_right_match_id", "photo_tournament_matches", type_="foreignkey")
-    op.drop_constraint("fk_photo_tournament_matches_feeder_left_match_id", "photo_tournament_matches", type_="foreignkey")
+    op.alter_column(
+        "photo_tournament_matches",
+        "left_entry_id",
+        existing_type=sa.Integer(),
+        nullable=False,
+    )
+    op.drop_constraint(
+        "fk_photo_tournament_matches_feeder_right_match_id",
+        "photo_tournament_matches",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_photo_tournament_matches_feeder_left_match_id",
+        "photo_tournament_matches",
+        type_="foreignkey",
+    )
     op.drop_column("photo_tournament_matches", "feeder_right_match_id")
     op.drop_column("photo_tournament_matches", "feeder_left_match_id")
-    op.drop_constraint("fk_photo_tournaments_favorite_photo_id", "photo_tournaments", type_="foreignkey")
+    op.drop_constraint(
+        "fk_photo_tournaments_favorite_photo_id",
+        "photo_tournaments",
+        type_="foreignkey",
+    )
     op.drop_column("photo_tournaments", "voting_ends_at")
     op.drop_column("photo_tournaments", "favorite_photo_id")

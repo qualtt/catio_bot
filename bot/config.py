@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     API_HASH: str | None = None
     USERBOT_SESSION_STRING: str | None = None
     USERBOT_SESSION_NAME: str = "catio_importer"
-    
+
     GEMINI_API_KEY: str | None = None
     GEMINI_PROXY_URL: str | None = None
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com"
@@ -98,5 +98,6 @@ class Settings(BaseSettings):
         return value
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
 
 config = Settings()

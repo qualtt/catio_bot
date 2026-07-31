@@ -41,7 +41,10 @@ async def test_publish_post_sends_photo_without_caption(monkeypatch):
     async def fake_create_channel_history_item(*args, **kwargs):
         indexed.update(kwargs)
 
-    monkeypatch.setattr("bot.services.publisher.create_channel_history_item", fake_create_channel_history_item)
+    monkeypatch.setattr(
+        "bot.services.publisher.create_channel_history_item",
+        fake_create_channel_history_item,
+    )
 
     await publish_post(bot, session, post)
 

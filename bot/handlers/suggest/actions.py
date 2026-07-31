@@ -165,19 +165,25 @@ async def _send_album_item_prompt(
     items = _album_items(data)
     index = int(data.get("album_index") or 0)
     item = items[index]
-    
+
     caption = _photo_dashboard_text(data, is_album=True)
     if include_warning:
         caption += "\n\n" + bot_content.message("album_duplicate_warning")
-        
+
     from bot.keyboards.inline import get_photo_dashboard_kb
+
     can_submit = all(it.get("animal_type") and (it.get("schedule_time") or it.get("is_auto_scheduled")) for it in items)
     reply_markup = get_photo_dashboard_kb(is_album=True, can_submit=can_submit, album_length=len(items))
-        
+
     prompt_chat_id = data.get("album_prompt_chat_id")
     prompt_message_id = data.get("album_prompt_message_id")
     if prompt_chat_id and prompt_message_id:
-        logger.info("Editing album prompt %s to index %s, file_id %s", prompt_message_id, index, item["file_id"])
+        logger.info(
+            "Editing album prompt %s to index %s, file_id %s",
+            prompt_message_id,
+            index,
+            item["file_id"],
+        )
         try:
             await bot.edit_message_media(
                 chat_id=prompt_chat_id,
@@ -190,7 +196,12 @@ async def _send_album_item_prompt(
                 logger.exception("Failed to edit album prompt media")
         return
 
-    sent = await bot.send_photo(chat_id=chat_id, photo=item["file_id"], caption=caption, reply_markup=reply_markup)
+    sent = await bot.send_photo(
+        chat_id=chat_id,
+        photo=item["file_id"],
+        caption=caption,
+        reply_markup=reply_markup,
+    )
     await state.update_data(
         album_prompt_chat_id=sent.chat.id,
         album_prompt_message_id=sent.message_id,
@@ -205,7 +216,12 @@ async def _edit_album_prompt_caption(bot: Bot, state: FSMContext, text: str, rep
         return False
 
     try:
-        await bot.edit_message_caption(chat_id=chat_id, message_id=message_id, caption=text, reply_markup=reply_markup)
+        await bot.edit_message_caption(
+            chat_id=chat_id,
+            message_id=message_id,
+            caption=text,
+            reply_markup=reply_markup,
+        )
         return True
     except TelegramAPIError:
         logger.exception("Failed to edit album prompt message %s", message_id)
@@ -252,9 +268,19 @@ async def _continue_album_or_ask_schedule(
         auto_date = next_slot.strftime("%d.%m") if next_slot else None
 
     if source_message:
-        await _edit_message_text_or_caption(source_message, text, reply_markup=get_schedule_choice_kb(auto_date=auto_date))
-    elif not await _edit_album_prompt_caption(bot, state, text, reply_markup=get_schedule_choice_kb(auto_date=auto_date)):
-        await bot.send_message(chat_id=chat_id, text=text, reply_markup=get_schedule_choice_kb(auto_date=auto_date))
+        await _edit_message_text_or_caption(
+            source_message,
+            text,
+            reply_markup=get_schedule_choice_kb(auto_date=auto_date),
+        )
+    elif not await _edit_album_prompt_caption(
+        bot, state, text, reply_markup=get_schedule_choice_kb(auto_date=auto_date)
+    ):
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=get_schedule_choice_kb(auto_date=auto_date),
+        )
 
 
 async def _handle_album_animal_selected(
@@ -528,7 +554,7 @@ async def _finalize_album_submission(
             await state.clear()
             await _edit_message_text_or_caption(
                 callback.message,
-                "⚠️ Время сессии истекло, и некоторые фотографии были удалены для экономии места. Пожалуйста, начните заново."
+                "⚠️ Время сессии истекло, и некоторые фотографии были удалены для экономии места. Пожалуйста, начните заново.",
             )
             return
 
@@ -538,7 +564,7 @@ async def _finalize_album_submission(
         bot_content.message(
             "album_submitted_manual",
             schedules=_album_schedule_summary(posts),
-        )
+        ),
     )
     await _send_album_submission_to_admin(bot, posts=posts, author=user_display(callback.from_user))
 
@@ -577,5 +603,28 @@ async def _save_album_schedule_and_continue(
     )
 
 
-
-__all__ = ['_album_selected_cat_dates', '_allocate_album_schedule_slots', '_annotate_album_internal_duplicates', '_ask_single_schedule', '_continue_album_or_ask_schedule', '_create_album_posts', '_edit_album_prompt_caption', '_finalize_album_submission', '_find_next_auto_slot', '_first_album_schedule_conflict', '_get_or_create_submission_user', '_handle_album_animal_selected', '_handle_album_custom_animal_type', '_save_album_animal_type', '_save_album_schedule_and_continue', '_select_single_animal_type', '_send_album_item_prompt', '_send_album_submission_to_admin', '_send_duplicate_original_to_admin', '_send_single_submission_to_admin', '_set_better_duplicate_match', '_store_submitted_photo', 'logger']
+__all__ = [
+    "_album_selected_cat_dates",
+    "_allocate_album_schedule_slots",
+    "_annotate_album_internal_duplicates",
+    "_ask_single_schedule",
+    "_continue_album_or_ask_schedule",
+    "_create_album_posts",
+    "_edit_album_prompt_caption",
+    "_finalize_album_submission",
+    "_find_next_auto_slot",
+    "_first_album_schedule_conflict",
+    "_get_or_create_submission_user",
+    "_handle_album_animal_selected",
+    "_handle_album_custom_animal_type",
+    "_save_album_animal_type",
+    "_save_album_schedule_and_continue",
+    "_select_single_animal_type",
+    "_send_album_item_prompt",
+    "_send_album_submission_to_admin",
+    "_send_duplicate_original_to_admin",
+    "_send_single_submission_to_admin",
+    "_set_better_duplicate_match",
+    "_store_submitted_photo",
+    "logger",
+]

@@ -34,9 +34,6 @@ LATIN_TO_CYRILLIC_HOMOGLYPHS = str.maketrans(
 )
 
 
-
-
-
 @dataclass(frozen=True)
 class AnimalTypeOption:
     id: int
@@ -177,5 +174,3 @@ CAT_ANIMAL_TYPE_KEYS = {
     animal_type_lookup_key("котенок"),
     animal_type_lookup_key("котёнок"),
 }
-
-

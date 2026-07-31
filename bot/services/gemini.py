@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 async def get_animal_prompt_options() -> str:
     from db.crud import get_animal_type_options
+
     async with async_session() as session:
         primary = await get_animal_type_options(session, is_primary=True)
         secondary = await get_animal_type_options(session, is_primary=False)
@@ -24,76 +25,85 @@ async def get_animal_prompt_options() -> str:
 async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
     if not config.GEMINI_API_KEY:
         return None
-        
+
     try:
         # Download photo
         telegram_file = await bot.get_file(file_id)
         buffer = io.BytesIO()
         await bot.download_file(telegram_file.file_path, destination=buffer)
         image_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        
+
         # Get options
         options_str = await get_animal_prompt_options()
-        
+
         prompt = (
             f"Верни только валидный JSON (без маркдауна и бектиков): "
-            f"{{\"animal\": \"{options_str}\", \"is_valid\": true/false, \"reason\": \"почему\", \"comment\": \"твой смешной комментарий\"}}. "
+            f'{{"animal": "{options_str}", "is_valid": true/false, "reason": "почему", "comment": "твой смешной комментарий"}}. '
             "is_valid = false если это мем, рисунок, человек или фото без животного. "
             "В поле comment всегда пиши забавный или милый комментарий (1-2 коротких предложения). "
             "Пиши так, будто общаешься с подписчиками. Используй эмодзи. "
             "Если фото валидное, пошути про то, что делает животное (например: 'На кого он так орет 😱'). "
             "Если фото невалидное, пошути над тем, что прислал пользователь (например: 'Это, конечно, красивый стул, но где тут кот? 🤨')."
         )
-        
+
         payload = {
-            "contents": [{
-                "role": "user",
-                "parts": [
-                    {"text": prompt},
-                    {
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": image_data
-                        }
-                    }
-                ]
-            }],
-            "generationConfig": {
-                "response_mime_type": "application/json"
-            }
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": image_data,
+                            }
+                        },
+                    ],
+                }
+            ],
+            "generationConfig": {"response_mime_type": "application/json"},
         }
-        
+
         # Strip trailing slash if present
         base_url = config.GEMINI_BASE_URL.rstrip("/")
         url = f"{base_url}/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
-        
+
         session_kwargs = {
             "headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             }
         }
         post_proxy = config.GEMINI_PROXY_URL
-        
+
         if config.GEMINI_PROXY_URL and config.GEMINI_PROXY_URL.startswith("socks5"):
             from aiohttp_socks import ProxyConnector
+
             session_kwargs["connector"] = ProxyConnector.from_url(config.GEMINI_PROXY_URL)
             post_proxy = None  # aiohttp_socks uses connector, not proxy param
-        
-        async with aiohttp.ClientSession(**session_kwargs) as session, session.post(url, json=payload, proxy=post_proxy, timeout=aiohttp.ClientTimeout(total=60)) as response:
-                if response.status == 429:
-                    logger.warning("Gemini API rate limit exceeded")
-                    return None
-                
-                if response.status != 200:
-                    text = await response.text()
-                    logger.error("Gemini API error %s: %s", response.status, text)
-                    return None
-                    
-                data = await response.json()
-                
+
+        async with (
+            aiohttp.ClientSession(**session_kwargs) as session,
+            session.post(
+                url,
+                json=payload,
+                proxy=post_proxy,
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as response,
+        ):
+            if response.status == 429:
+                logger.warning("Gemini API rate limit exceeded")
+                return None
+
+            if response.status != 200:
+                text = await response.text()
+                logger.error("Gemini API error %s: %s", response.status, text)
+                return None
+
+            data = await response.json()
+
         result_text = data["candidates"][0]["content"]["parts"][0]["text"]
         result = json.loads(result_text)
-        
+
         # Validate returned animal
         valid_options = options_str.split("/")
         valid_options_lower = [opt.lower() for opt in valid_options]
@@ -107,7 +117,7 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
                 # Сохраняем оригинальный регистр из базы данных
                 idx = valid_options_lower.index(animal.lower())
                 result["animal"] = valid_options[idx]
-            
+
         return result
     except Exception:
         logger.exception("Failed to analyze photo with Gemini")

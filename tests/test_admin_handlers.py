@@ -92,6 +92,7 @@ async def test_admin_custom_animal_type_normalizes_homoglyphs(db_session, monkey
     bot = FakeBot()
 
     from bot.handlers.admin import messages as admin_messages
+
     monkeypatch.setattr(admin_messages, "async_session", lambda: SessionContext(db_session))
     await admin_messages.handle_admin_custom_animal_text(message, state, bot)
     await db_session.refresh(post)

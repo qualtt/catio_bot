@@ -6,7 +6,7 @@ from bot.keyboards.calendar import build_month_calendar, slot_marker
 def test_slot_marker_reflects_availability():
     min_date = date(2026, 7, 1)
     max_date = date(2026, 7, 31)
-    
+
     # Outside range
     assert slot_marker(date(2026, 6, 30), min_date, max_date, 3, 3) == ("⚫️", "black")
     # No free slots

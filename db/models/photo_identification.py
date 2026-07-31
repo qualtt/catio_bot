@@ -33,7 +33,11 @@ class PhotoIdentificationAssignment(Base):
             name="uq_photo_identification_assignments_item_user",
         ),
         Index("ix_photo_identification_assignments_user_status", "user_id", "status"),
-        Index("ix_photo_identification_assignments_item_status", "channel_history_id", "status"),
+        Index(
+            "ix_photo_identification_assignments_item_status",
+            "channel_history_id",
+            "status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -56,7 +60,11 @@ class PhotoIdentificationVote(Base):
             "user_id",
             name="uq_photo_identification_votes_item_user",
         ),
-        Index("ix_photo_identification_votes_item_reviewed", "channel_history_id", "reviewed_at"),
+        Index(
+            "ix_photo_identification_votes_item_reviewed",
+            "channel_history_id",
+            "reviewed_at",
+        ),
         Index("ix_photo_identification_votes_user_created_at", "user_id", "created_at"),
     )
 
@@ -74,9 +82,7 @@ class PhotoIdentificationVote(Base):
 
 class PhotoIdentificationBatch(Base):
     __tablename__ = "photo_identification_batches"
-    __table_args__ = (
-        Index("ix_photo_identification_batches_status", "status"),
-    )
+    __table_args__ = (Index("ix_photo_identification_batches_status", "status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     animal_type: Mapped[str] = mapped_column(String(50), nullable=False)

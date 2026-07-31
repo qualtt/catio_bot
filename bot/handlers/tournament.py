@@ -143,7 +143,10 @@ async def _show_champion_pick(
             )
             return
         except TelegramAPIError:
-            logger.exception("Failed to edit tournament champion message %s", source_message.message_id)
+            logger.exception(
+                "Failed to edit tournament champion message %s",
+                source_message.message_id,
+            )
 
     await bot.send_photo(
         chat_id=chat_id,

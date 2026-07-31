@@ -11,15 +11,18 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = 'd467e86b042d'
-down_revision: str | None = 'c7d8e9f0a1b2'
+revision: str = "d467e86b042d"
+down_revision: str | None = "c7d8e9f0a1b2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column('users', sa.Column('is_muted', sa.Boolean(), server_default='false', nullable=False))
+    op.add_column(
+        "users",
+        sa.Column("is_muted", sa.Boolean(), server_default="false", nullable=False),
+    )
 
 
 def downgrade() -> None:
-    op.drop_column('users', 'is_muted')
+    op.drop_column("users", "is_muted")

@@ -45,7 +45,12 @@ def utc_now() -> datetime:
 class PhotoTournament(Base):
     __tablename__ = "photo_tournaments"
     __table_args__ = (
-        UniqueConstraint("type", "period_start", "period_end", name="uq_photo_tournaments_type_period"),
+        UniqueConstraint(
+            "type",
+            "period_start",
+            "period_end",
+            name="uq_photo_tournaments_type_period",
+        ),
         Index("ix_photo_tournaments_type_status", "type", "status"),
     )
 
@@ -81,7 +86,11 @@ class PhotoTournament(Base):
 class PhotoTournamentEntry(Base):
     __tablename__ = "photo_tournament_entries"
     __table_args__ = (
-        UniqueConstraint("tournament_id", "photo_id", name="uq_photo_tournament_entries_tournament_photo"),
+        UniqueConstraint(
+            "tournament_id",
+            "photo_id",
+            name="uq_photo_tournament_entries_tournament_photo",
+        ),
         UniqueConstraint("tournament_id", "seed", name="uq_photo_tournament_entries_tournament_seed"),
         Index("ix_photo_tournament_entries_tournament_status", "tournament_id", "status"),
         Index("ix_photo_tournament_entries_source_weekly", "source_weekly_tournament_id"),
@@ -113,7 +122,11 @@ class PhotoTournamentEntry(Base):
 class PhotoTournamentRound(Base):
     __tablename__ = "photo_tournament_rounds"
     __table_args__ = (
-        UniqueConstraint("tournament_id", "round_number", name="uq_photo_tournament_rounds_tournament_number"),
+        UniqueConstraint(
+            "tournament_id",
+            "round_number",
+            name="uq_photo_tournament_rounds_tournament_number",
+        ),
         Index("ix_photo_tournament_rounds_status_ends_at", "status", "ends_at"),
     )
 
@@ -200,7 +213,11 @@ class PhotoTournamentVote(Base):
 class PhotoTournamentNotification(Base):
     __tablename__ = "photo_tournament_notifications"
     __table_args__ = (
-        UniqueConstraint("tournament_id", "user_id", name="uq_photo_tournament_notifications_tournament_user"),
+        UniqueConstraint(
+            "tournament_id",
+            "user_id",
+            name="uq_photo_tournament_notifications_tournament_user",
+        ),
         Index("ix_photo_tournament_notifications_status", "status"),
     )
 

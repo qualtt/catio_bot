@@ -38,9 +38,11 @@ def _photo(index: int) -> Photo:
         sha256=f"{index:064x}",
     )
 
+
 @pytest.fixture(autouse=True)
 def mock_now(monkeypatch):
     from bot.services.tournaments import lifecycle, queries, voting
+
     mocked_time = lambda: datetime(2026, 7, 6, 12, 0, tzinfo=app_timezone())
     monkeypatch.setattr(voting, "now_in_app_tz", mocked_time)
     monkeypatch.setattr(queries, "now_in_app_tz", mocked_time)
@@ -144,8 +146,18 @@ async def test_submit_tournament_vote_is_idempotent(db_session):
     await db_session.flush()
     db_session.add_all(
         [
-            ChannelHistory(message_id=101, file_id="file-1", photo_id=first_photo.id, published_at=now - timedelta(days=1)),
-            ChannelHistory(message_id=102, file_id="file-2", photo_id=second_photo.id, published_at=now - timedelta(days=1)),
+            ChannelHistory(
+                message_id=101,
+                file_id="file-1",
+                photo_id=first_photo.id,
+                published_at=now - timedelta(days=1),
+            ),
+            ChannelHistory(
+                message_id=102,
+                file_id="file-2",
+                photo_id=second_photo.id,
+                published_at=now - timedelta(days=1),
+            ),
         ]
     )
     await db_session.commit()
@@ -184,8 +196,18 @@ async def test_close_due_tournament_completes_two_photo_tournament(db_session):
     await db_session.flush()
     db_session.add_all(
         [
-            ChannelHistory(message_id=101, file_id="file-1", photo_id=first_photo.id, published_at=now - timedelta(days=1)),
-            ChannelHistory(message_id=102, file_id="file-2", photo_id=second_photo.id, published_at=now - timedelta(days=1)),
+            ChannelHistory(
+                message_id=101,
+                file_id="file-1",
+                photo_id=first_photo.id,
+                published_at=now - timedelta(days=1),
+            ),
+            ChannelHistory(
+                message_id=102,
+                file_id="file-2",
+                photo_id=second_photo.id,
+                published_at=now - timedelta(days=1),
+            ),
         ]
     )
     await db_session.commit()
@@ -235,7 +257,10 @@ async def test_user_advances_to_next_round_after_first_round_vote(db_session):
         (
             await db_session.execute(
                 select(PhotoTournamentMatch)
-                .join(PhotoTournamentRound, PhotoTournamentRound.id == PhotoTournamentMatch.round_id)
+                .join(
+                    PhotoTournamentRound,
+                    PhotoTournamentRound.id == PhotoTournamentMatch.round_id,
+                )
                 .where(
                     PhotoTournamentMatch.tournament_id == tournament.id,
                     PhotoTournamentRound.round_number == 1,
@@ -293,7 +318,10 @@ async def test_user_advances_to_final_after_six_photo_bracket_votes(db_session):
         (
             await db_session.execute(
                 select(PhotoTournamentMatch)
-                .join(PhotoTournamentRound, PhotoTournamentRound.id == PhotoTournamentMatch.round_id)
+                .join(
+                    PhotoTournamentRound,
+                    PhotoTournamentRound.id == PhotoTournamentMatch.round_id,
+                )
                 .where(
                     PhotoTournamentMatch.tournament_id == tournament.id,
                     PhotoTournamentRound.round_number == 1,
@@ -348,11 +376,14 @@ async def test_user_advances_to_final_after_six_photo_bracket_votes(db_session):
     )
     assert champion is not None
     assert champion.id == final_view.left_entry.id
-    assert await get_next_open_match_for_user(
-        db_session,
-        user_id=user.id,
-        tournament_id=tournament.id,
-    ) is None
+    assert (
+        await get_next_open_match_for_user(
+            db_session,
+            user_id=user.id,
+            tournament_id=tournament.id,
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -384,7 +415,10 @@ async def test_close_due_tournament_sets_favorite_from_final_votes(db_session):
         (
             await db_session.execute(
                 select(PhotoTournamentMatch)
-                .join(PhotoTournamentRound, PhotoTournamentRound.id == PhotoTournamentMatch.round_id)
+                .join(
+                    PhotoTournamentRound,
+                    PhotoTournamentRound.id == PhotoTournamentMatch.round_id,
+                )
                 .where(
                     PhotoTournamentMatch.tournament_id == tournament.id,
                     PhotoTournamentRound.round_number == 1,
@@ -405,7 +439,10 @@ async def test_close_due_tournament_sets_favorite_from_final_votes(db_session):
 
     final_match = await db_session.scalar(
         select(PhotoTournamentMatch)
-        .join(PhotoTournamentRound, PhotoTournamentRound.id == PhotoTournamentMatch.round_id)
+        .join(
+            PhotoTournamentRound,
+            PhotoTournamentRound.id == PhotoTournamentMatch.round_id,
+        )
         .where(
             PhotoTournamentMatch.tournament_id == tournament.id,
             PhotoTournamentRound.round_number == 2,
@@ -454,10 +491,13 @@ class FakeResultsBot:
 
     async def send_photo(self, **kwargs):
         self.messages.append(kwargs)
+
         class FakePhoto:
             file_id = "fake_file_id"
+
         class FakeMessage:
             photo = (FakePhoto(),)
+
         return FakeMessage()
 
 
@@ -498,11 +538,7 @@ async def test_get_latest_completed_tournament_returns_most_recent(db_session):
     await db_session.commit()
 
     tournaments = list(
-        (
-            await db_session.execute(
-                select(PhotoTournament).order_by(PhotoTournament.completed_at.asc())
-            )
-        ).scalars()
+        (await db_session.execute(select(PhotoTournament).order_by(PhotoTournament.completed_at.asc()))).scalars()
     )
     latest = await get_latest_completed_tournament(db_session)
 

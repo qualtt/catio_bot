@@ -92,9 +92,7 @@ def _replace_value(connection, table_name: str, column_name: str, old_value: str
 def upgrade() -> None:
     connection = op.get_bind()
 
-    animal_type_rows = list(
-        connection.execute(sa.text("SELECT id, name FROM animal_types ORDER BY id")).mappings()
-    )
+    animal_type_rows = list(connection.execute(sa.text("SELECT id, name FROM animal_types ORDER BY id")).mappings())
     canonical_by_key: dict[str, str] = {}
     for row in animal_type_rows:
         target = _safe_target(row["name"], {})

@@ -32,7 +32,7 @@ async def create_post(
         file_id=file_id,
         animal_type=animal_type,
         is_auto_scheduled=is_auto_scheduled,
-        schedule_time=manual_time
+        schedule_time=manual_time,
     )
     session.add(post)
     await session.commit()
@@ -41,31 +41,16 @@ async def create_post(
 
 
 async def get_user_post_stats(session: AsyncSession, user_id: int) -> dict[PostStatus, int]:
-    stmt = (
-        select(Post.status, func.count(Post.id))
-        .where(Post.user_id == user_id)
-        .group_by(Post.status)
-    )
+    stmt = select(Post.status, func.count(Post.id)).where(Post.user_id == user_id).group_by(Post.status)
     result = await session.execute(stmt)
     return dict(result.all())
 
 
 async def get_recent_user_posts(session: AsyncSession, user_id: int, limit: int = 5) -> list[Post]:
-    stmt = (
-        select(Post)
-        .where(Post.user_id == user_id)
-        .order_by(Post.created_at.desc())
-        .limit(limit)
-    )
+    stmt = select(Post).where(Post.user_id == user_id).order_by(Post.created_at.desc()).limit(limit)
     return list((await session.execute(stmt)).scalars())
 
 
 async def get_post_by_id(session: AsyncSession, post_id: int) -> Post | None:
-    stmt = (
-        select(Post)
-        .options(selectinload(Post.user), selectinload(Post.photo))
-        .where(Post.id == post_id)
-    )
+    stmt = select(Post).options(selectinload(Post.user), selectinload(Post.photo)).where(Post.id == post_id)
     return (await session.execute(stmt)).scalar_one_or_none()
-
-
