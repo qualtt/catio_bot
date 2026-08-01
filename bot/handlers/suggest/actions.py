@@ -408,7 +408,10 @@ async def _create_album_posts(
             submission_group_index=index,
             submission_group_size=len(items),
         )
-        await session.refresh(post, ["duplicate_of_photo"])
+        if post.duplicate_of_photo_id:
+            from db.models.photo import Photo
+
+            post.duplicate_of_photo = await session.get(Photo, post.duplicate_of_photo_id)
         posts.append(post)
 
     return posts

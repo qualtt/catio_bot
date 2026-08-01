@@ -284,7 +284,10 @@ async def handle_dash_submit(callback: CallbackQuery, state: FSMContext, bot: Bo
                 duplicate_of_photo_id=duplicate_of_photo_id,
                 duplicate_distance=duplicate_distance,
             )
-            await session.refresh(post, ["duplicate_of_photo"])
+            if post.duplicate_of_photo_id:
+                from db.models.photo import Photo
+
+                post.duplicate_of_photo = await session.get(Photo, post.duplicate_of_photo_id)
     except IntegrityError:
         _finish_single_submission(callback.message.message_id)
         await _edit_message_text_or_caption(
