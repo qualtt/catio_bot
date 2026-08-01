@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.6-flash"
     ENABLE_GEMINI: bool = True
 
+    TELEGRAM_PROXY_URL: str | None = None
+
     @field_validator("API_ID", mode="before")
     @classmethod
     def empty_api_id_to_none(cls, value: Any) -> Any:
@@ -88,6 +90,7 @@ class Settings(BaseSettings):
         "GEMINI_API_KEY",
         "GEMINI_PROXY_URL",
         "GEMINI_BASE_URL",
+        "TELEGRAM_PROXY_URL",
         mode="before",
     )
     @classmethod
