@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import timedelta
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
@@ -95,6 +96,7 @@ async def publish_due_posts(bot: Bot) -> int:
                 .where(
                     Post.status == PostStatus.APPROVED,
                     Post.schedule_time <= now,
+                    Post.schedule_time >= now - timedelta(hours=1),
                 )
                 .order_by(Post.schedule_time, Post.id)
                 .limit(1)

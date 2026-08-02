@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from aiogram.types import CallbackQuery
@@ -76,14 +76,18 @@ def admin_schedule_text(target_date: date, posts: list[Post]) -> str:
     if not posts:
         return bot_content.message("admin_schedule_empty", date=target_date.isoformat())
 
+    now = now_in_app_tz()
     lines = []
     for post in posts:
         photo_ref = f"/photo_{post.photo_id}" if post.photo_id else bot_content.message("author_unknown")
+        time_str = format_schedule(post.schedule_time)[11:16]
+        if post.status == PostStatus.APPROVED and post.schedule_time < now - timedelta(hours=1):
+            time_str += " ⚠️ Не выложено"
         lines.append(
             bot_content.message(
                 "admin_schedule_line",
                 post_id=post.id,
-                time=format_schedule(post.schedule_time)[11:16],
+                time=time_str,
                 animal_type=post.animal_type,
                 photo_ref=photo_ref,
                 author=post_author(post),
