@@ -41,6 +41,20 @@ def _require_bucket() -> str:
     return config.S3_BUCKET
 
 
+import botocore.httpsession
+
+original_fix_proxy_url = botocore.httpsession.ProxyConfiguration._fix_proxy_url
+
+
+def _patched_fix_proxy_url(self, proxy_url):
+    if proxy_url.startswith(("socks5:", "socks5h:")):
+        return proxy_url
+    return original_fix_proxy_url(self, proxy_url)
+
+
+botocore.httpsession.ProxyConfiguration._fix_proxy_url = _patched_fix_proxy_url
+
+
 def _s3_client():
     proxy = config.TELEGRAM_PROXY_URL or config.GEMINI_PROXY_URL
     client_config = Config(
