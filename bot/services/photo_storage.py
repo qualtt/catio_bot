@@ -48,6 +48,7 @@ def _s3_client():
     kwargs = {
         "region_name": config.S3_REGION,
         "config": client_config,
+        "verify": config.S3_VERIFY_SSL,
     }
     if config.S3_ENDPOINT_URL:
         kwargs["endpoint_url"] = config.S3_ENDPOINT_URL

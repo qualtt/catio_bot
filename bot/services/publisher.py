@@ -104,10 +104,11 @@ async def publish_due_posts(bot: Bot) -> int:
             if post is None:
                 break
 
+            post_id = post.id
             try:
                 await publish_post(bot, session, post)
             except Exception:
-                logger.exception("Failed to publish post %d", post.id)
+                logger.exception("Failed to publish post %d", post_id)
                 break
 
             published_count += 1

@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     S3_SECRET_ACCESS_KEY: str | None = None
     S3_PREFIX: str = "catio-bot/photos"
     S3_FORCE_PATH_STYLE: bool = False
+    S3_VERIFY_SSL: bool = True
 
     API_ID: int | None = None
     API_HASH: str | None = None
