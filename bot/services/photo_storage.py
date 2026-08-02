@@ -208,8 +208,19 @@ async def upload_telegram_photo(
 
 async def download_photo(*, storage_bucket: str, storage_key: str) -> bytes:
     def download() -> bytes:
-        response = _s3_client().get_object(Bucket=storage_bucket, Key=storage_key)
-        return response["Body"].read()
+        import logging
+
+        import botocore.exceptions
+
+        try:
+            response = _s3_client().get_object(Bucket=storage_bucket, Key=storage_key)
+            return response["Body"].read()
+        except botocore.exceptions.ClientError as e:
+            logger = logging.getLogger(__name__)
+            headers = e.response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
+            logger.error("Boto3 ClientError! Headers: %s", headers)
+            logger.error("Redirect Location: %s", headers.get("location"))
+            raise
 
     return await asyncio.to_thread(download)
 
