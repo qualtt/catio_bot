@@ -288,7 +288,9 @@ async def handle_admin_cal_day(callback: CallbackQuery, state: FSMContext):
         from .helpers import load_admin_schedule_posts
 
         day_posts = await load_admin_schedule_posts(session, selected_date)
-        taken_times = {post.schedule_time.timetz().replace(tzinfo=None) for post in day_posts}
+        from db.crud.time_utils import ensure_app_timezone
+
+        taken_times = {ensure_app_timezone(post.schedule_time).time() for post in day_posts}
 
     builder = InlineKeyboardBuilder()
     for slot_time in parse_daily_slot_times():
