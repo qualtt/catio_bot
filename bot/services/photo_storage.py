@@ -42,8 +42,10 @@ def _require_bucket() -> str:
 
 
 def _s3_client():
+    proxy = config.TELEGRAM_PROXY_URL or config.GEMINI_PROXY_URL
     client_config = Config(
         s3={"addressing_style": "path" if config.S3_FORCE_PATH_STYLE else "auto"},
+        proxies={"http": proxy, "https": proxy} if proxy else None,
     )
     kwargs = {
         "region_name": config.S3_REGION,
