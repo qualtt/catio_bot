@@ -241,7 +241,7 @@ def get_admin_post_manage_kb(post_id: int, return_date: date) -> InlineKeyboardM
     )
     builder.button(
         text=bot_content.button("admin_change_time"),
-        callback_data=f"admin_reschedule_{post_id}_{return_date.isoformat()}",
+        callback_data=f"admin_reschedule_post_{post_id}_{return_date.isoformat()}",
     )
     builder.button(
         text=bot_content.button("admin_back_to_schedule"),

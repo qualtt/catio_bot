@@ -221,14 +221,14 @@ async def handle_admin_publish_now(callback: CallbackQuery, bot: Bot):
     await send_admin_schedule(callback, return_date, callback_text=bot_content.message("admin_published_now"))
 
 
-@admin_router.callback_query(F.data.startswith("admin_reschedule_"))
+@admin_router.callback_query(F.data.startswith("admin_reschedule_post_"))
 async def handle_admin_reschedule_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback):
         await callback.answer(bot_content.message("not_admin"), show_alert=True)
         return
 
-    _, _, post_id_raw, return_date_raw = callback.data.split("_", 3)
     try:
+        post_id_raw, return_date_raw = callback.data.removeprefix("admin_reschedule_post_").split("_", 1)
         post_id = int(post_id_raw)
         return_date = date.fromisoformat(return_date_raw)
     except ValueError:
