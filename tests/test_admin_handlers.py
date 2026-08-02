@@ -59,6 +59,7 @@ def test_admin_schedule_text_includes_photo_command_and_author():
         photo_id=88,
         animal_type="кот",
         schedule_time=datetime(2026, 7, 6, 18, 30, tzinfo=app_timezone()),
+        status=PostStatus.APPROVED,
         user=SimpleNamespace(username="user", telegram_id=1001),
     )
 
