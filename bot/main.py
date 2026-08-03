@@ -24,7 +24,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 
 async def main():
-    proxy = config.TELEGRAM_PROXY_URL or config.GEMINI_PROXY_URL
+    proxy = config.TELEGRAM_PROXY_URL
     session = AiohttpSession(proxy=proxy) if proxy else None
     bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"), session=session)
     storage = RedisStorage.from_url(f"redis://{config.REDIS_HOST}:{config.REDIS_PORT}/0")
