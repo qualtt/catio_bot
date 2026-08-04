@@ -500,6 +500,17 @@ class FakeResultsBot:
 
         return FakeMessage()
 
+    async def send_document(self, **kwargs):
+        self.messages.append(kwargs)
+
+        class FakeDocument:
+            file_id = "fake_file_id"
+
+        class FakeMessage:
+            document = FakeDocument()
+
+        return FakeMessage()
+
 
 @pytest.mark.asyncio
 async def test_get_latest_completed_tournament_returns_most_recent(db_session):

@@ -52,6 +52,7 @@ async def test_publish_post_sends_photo_without_caption(monkeypatch):
         {
             "chat_id": "-100123",
             "photo": "telegram-file-id",
+            "request_timeout": 300,
         }
     ]
     assert post.status == PostStatus.PUBLISHED
