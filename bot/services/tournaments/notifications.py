@@ -151,12 +151,14 @@ async def send_tournament_results_notifications(
     for user in users:
         try:
             if not photo_input_str and isinstance(photo_input, BufferedInputFile):
-                sent_msg = await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text)
+                sent_msg = await bot.send_photo(
+                    chat_id=user.telegram_id, photo=photo_input, caption=text, request_timeout=300
+                )
                 if sent_msg.photo:
                     photo_input_str = sent_msg.photo[-1].file_id
                     photo_input = photo_input_str
             else:
-                await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text)
+                await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text, request_timeout=300)
             sent_count += 1
         except TelegramAPIError as error:
             failed_count += 1

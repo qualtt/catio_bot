@@ -46,6 +46,7 @@ async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> N
         message = await bot.send_photo(
             chat_id=config.CHANNEL_ID,
             photo=photo,
+            request_timeout=300,
         )
     except Exception:
         logger.exception("Failed to publish post %s", post.id)
