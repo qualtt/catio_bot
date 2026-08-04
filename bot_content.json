@@ -100,7 +100,7 @@
     "top_header": "Топ участников:\n{users}",
     "top_line": "{position}. {name}: {score}",
     "top_line_posts": "{position}. {name} — {count} фото",
-    "top_line_tournaments": "{position}. {name} — {count} побед",
+    "top_line_tournaments": "{position}. {name} — {wins_text}",
     "cancelled": "Текущая отправка отменена.",
     "nothing_to_cancel": "Сейчас нечего отменять.",
     "gemini_confirm_valid": "🤖 Нейросеть считает, что это <b>{animal}</b>.\nОписание: <i>{reason}</i>\n\nСогласны?",

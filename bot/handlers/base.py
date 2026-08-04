@@ -353,7 +353,15 @@ async def top_tournaments_callback(callback: CallbackQuery):
     lines = []
     for index, (user, count) in enumerate(users_with_counts, start=1):
         name = user.username or user.full_name or "Аноним"
-        lines.append(bot_content.message("top_line_tournaments", position=index, name=name, count=count))
+
+        if count % 10 == 1 and count % 100 != 11:
+            wins_text = f"{count} победа"
+        elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
+            wins_text = f"{count} победы"
+        else:
+            wins_text = f"{count} побед"
+
+        lines.append(bot_content.message("top_line_tournaments", position=index, name=name, wins_text=wins_text))
 
     text = bot_content.message("top_header", users="\n".join(lines))
     if callback.message and callback.message.text != text:
