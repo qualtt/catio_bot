@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.content import bot_content
 from bot.keyboards.inline import get_tournament_start_kb
-from bot.services.photo_storage import download_photo
+from bot.services.photo_storage import _require_bucket, _s3_client, download_photo
 from db.crud import now_in_app_tz
 from db.models.photo import Photo
 from db.models.photo_tournament import (
@@ -26,6 +26,7 @@ from db.models.photo_tournament import (
 )
 from db.models.user import User
 
+from .bracket_drawer import generate_tournament_bracket_image
 from .utils import (
     tournament_period_label,
     tournament_results_text,
@@ -119,15 +120,31 @@ async def send_tournament_results_notifications(
     sent_count = 0
     failed_count = 0
 
-    photo = await session.get(Photo, tournament.winner_photo_id)
-    if photo is None:
-        logger.error(f"Winner photo {tournament.winner_photo_id} not found for tournament {tournament.id}")
-        return 0, 0
+    bracket_bytes = await generate_tournament_bracket_image(session, tournament.id)
+    if bracket_bytes:
+        photo_input = BufferedInputFile(bracket_bytes, filename=f"bracket-{tournament.id}.png")
 
-    photo_input = photo.telegram_file_id
-    if not photo_input:
-        photo_data = await download_photo(storage_bucket=photo.storage_bucket, storage_key=photo.storage_key)
-        photo_input = BufferedInputFile(photo_data, filename=f"winner-{photo.id}.jpg")
+        # Upload to S3
+        try:
+            bucket = _require_bucket()
+            key = f"tournaments/bracket_{tournament.id}.png"
+
+            def upload():
+                _s3_client().put_object(Bucket=bucket, Key=key, Body=bracket_bytes, ContentType="image/png")
+
+            await asyncio.to_thread(upload)
+        except Exception as e:
+            logger.warning(f"Failed to upload bracket to S3: {e}")
+    else:
+        photo = await session.get(Photo, tournament.winner_photo_id)
+        if photo is None:
+            logger.error(f"Winner photo {tournament.winner_photo_id} not found for tournament {tournament.id}")
+            return 0, 0
+
+        photo_input = photo.telegram_file_id
+        if not photo_input:
+            photo_data = await download_photo(storage_bucket=photo.storage_bucket, storage_key=photo.storage_key)
+            photo_input = BufferedInputFile(photo_data, filename=f"winner-{photo.id}.jpg")
 
     photo_input_str = photo_input if isinstance(photo_input, str) else None
 
