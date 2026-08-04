@@ -45,3 +45,4 @@ redisdata/
 .vscode/
 *.swp
 *.swo
+scratch/
