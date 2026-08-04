@@ -108,7 +108,7 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
 
     # 2. Dimensions
     COL_WIDTH = 320
-    ROW_HEIGHT = 160
+    ROW_HEIGHT = 220
 
     # Find total leaf nodes by traversing
     leaf_count = sum(1 for m in matches if not m.feeder_left_match_id and not m.feeder_right_match_id)
@@ -124,24 +124,43 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("Arial.ttf", 16)
-        bold_font = ImageFont.truetype("Arial.ttf", 20)
+        # Пытаемся использовать шрифты, которые установлены в Dockerfile (fonts-dejavu)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        bold_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
     except Exception:
-        font = ImageFont.load_default()
-        bold_font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype("Arial.ttf", 16)
+            bold_font = ImageFont.truetype("Arial.ttf", 20)
+        except Exception:
+            font = ImageFont.load_default()
+            bold_font = ImageFont.load_default()
 
-    def assign_coords(node: BracketNode, min_y: int, max_y: int) -> int:
+    current_y = 0
+
+    def assign_coords(node: BracketNode) -> int:
+        nonlocal current_y
         node.x = (node.round_idx - 1) * COL_WIDTH + 50
-        if node.feeder_left and node.feeder_right:
-            mid = (min_y + max_y) // 2
-            left_y = assign_coords(node.feeder_left, min_y, mid)
-            right_y = assign_coords(node.feeder_right, mid, max_y)
-            node.y = (left_y + right_y) // 2
+
+        if not node.feeder_left and not node.feeder_right:
+            node.y = current_y + ROW_HEIGHT // 2
+            current_y += ROW_HEIGHT
         else:
-            node.y = (min_y + max_y) // 2
+            left_y = assign_coords(node.feeder_left) if node.feeder_left else None
+            right_y = assign_coords(node.feeder_right) if node.feeder_right else None
+
+            if left_y is not None and right_y is not None:
+                node.y = (left_y + right_y) // 2
+            elif left_y is not None:
+                node.y = left_y
+            elif right_y is not None:
+                node.y = right_y
+
         return node.y
 
-    assign_coords(root_node, 0, height)
+    assign_coords(root_node)
+
+    # Calculate height based on actual layout instead of estimate
+    height = max(current_y, ROW_HEIGHT * 2)
 
     # Fetch all needed photos concurrently
     photos_to_fetch = {}
@@ -154,16 +173,25 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
     import asyncio
 
     fetched_images = {}
+    winner_images = {}
 
     async def fetch_task(p_id, p):
         im = await _fetch_photo_image(p.storage_bucket, p.storage_key)
         if im:
-            fetched_images[p_id] = _create_thumbnail(im)
+            fetched_images[p_id] = _create_thumbnail(im, size=(80, 80))
+            winner_images[p_id] = _create_thumbnail(im, size=(120, 120))
 
     await asyncio.gather(*(fetch_task(p_id, p) for p_id, p in photos_to_fetch.items()))
 
     BOX_WIDTH = 250
-    BOX_HEIGHT = 120
+    BOX_HEIGHT = 190
+
+    def get_plural_votes(n: int) -> str:
+        if n % 10 == 1 and n % 100 != 11:
+            return f"{n} голос"
+        elif 2 <= n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
+            return f"{n} голоса"
+        return f"{n} голосов"
 
     def draw_node(node: BracketNode):
         if node.feeder_left and node.feeder_right:
@@ -201,40 +229,46 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
         if node.match.left_entry:
             l_photo = fetched_images.get(node.match.left_entry.photo.id)
             if l_photo:
-                img.paste(l_photo, (node.x + 10, node.y - BOX_HEIGHT // 2 + 10), l_photo)
+                img.paste(l_photo, (node.x + 10, node.y - 85), l_photo)
 
-            l_votes = f"{node.match.left_votes} votes"
+            l_votes = get_plural_votes(node.match.left_votes)
             c = "#34c759" if has_winner and node.match.winner_entry_id == node.match.left_entry_id else "#8e8e93"
-            draw.text((node.x + 100, node.y - BOX_HEIGHT // 2 + 30), l_votes, fill=c, font=font)
+            draw.text((node.x + 100, node.y - 55), l_votes, fill=c, font=font)
 
         draw.line([(node.x + 100, node.y), (node.x + 240, node.y)], fill="#48484a", width=1)
 
         if node.match.right_entry:
             r_photo = fetched_images.get(node.match.right_entry.photo.id)
             if r_photo:
-                img.paste(r_photo, (node.x + 10, node.y + 10), r_photo)
+                img.paste(r_photo, (node.x + 10, node.y + 5), r_photo)
 
-            r_votes = f"{node.match.right_votes} votes"
+            r_votes = get_plural_votes(node.match.right_votes)
             c = "#34c759" if has_winner and node.match.winner_entry_id == node.match.right_entry_id else "#8e8e93"
-            draw.text((node.x + 100, node.y + 30), r_votes, fill=c, font=font)
+            draw.text((node.x + 100, node.y + 35), r_votes, fill=c, font=font)
         elif not node.match.right_entry and node.match.left_entry:
-            draw.text((node.x + 100, node.y + 30), "BYE", fill="#8e8e93", font=font)
+            draw.text((node.x + 100, node.y + 35), "АВТОПРОХОД", fill="#8e8e93", font=font)
 
     draw_node(root_node)
 
     winner_x = root_node.x + COL_WIDTH
     winner_y = root_node.y
+    WINNER_BOX_W = 180
+    WINNER_BOX_H = 200
+
     draw.line([(root_node.x + BOX_WIDTH, root_node.y), (winner_x, winner_y)], fill="#ffcc00", width=4)
 
-    w_box = [winner_x, winner_y - BOX_HEIGHT // 2, winner_x + BOX_WIDTH, winner_y + BOX_HEIGHT // 2]
-    draw.rounded_rectangle(w_box, radius=16, fill="#ffcc00", outline="#ff9500", width=2)
-
-    draw.text((winner_x + 80, winner_y - 20), "WINNER!", fill="#000", font=bold_font)
+    w_box = [winner_x, winner_y - WINNER_BOX_H // 2, winner_x + WINNER_BOX_W, winner_y + WINNER_BOX_H // 2]
+    draw.rounded_rectangle(w_box, radius=16, fill="#34c759", outline="#248a3d", width=2)
 
     if root_match.winner_entry:
-        w_photo = fetched_images.get(root_match.winner_entry.photo.id)
+        w_photo = winner_images.get(root_match.winner_entry.photo.id)
         if w_photo:
-            img.paste(w_photo, (winner_x + 10, winner_y - 40), w_photo)
+            img.paste(w_photo, (winner_x + 30, winner_y - WINNER_BOX_H // 2 + 15), w_photo)
+
+    bbox = draw.textbbox((0, 0), "ПОБЕДИТЕЛЬ!", font=bold_font)
+    text_w = bbox[2] - bbox[0]
+    text_x = winner_x + (WINNER_BOX_W - text_w) // 2
+    draw.text((text_x, winner_y + 55), "ПОБЕДИТЕЛЬ!", fill="#ffffff", font=bold_font)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
