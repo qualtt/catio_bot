@@ -83,7 +83,7 @@ services:
         condition: service_healthy
 
   pgbackups:
-    image: prodrigestivill/postgres-backup-s3:15
+    image: eeshugerman/postgres-backup-s3
     restart: always
     env_file:
       - path: .env
