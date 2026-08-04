@@ -56,7 +56,8 @@ async def get_top_users_by_posts(session: AsyncSession, limit: int = 10) -> list
 async def get_top_users_by_tournaments(session: AsyncSession, limit: int = 10) -> list[tuple[User, int]]:
     stmt = (
         select(User, func.count(PhotoTournament.id))
-        .join(Photo, Photo.user_id == User.id)
+        .join(Post, Post.user_id == User.id)
+        .join(Photo, Photo.id == Post.photo_id)
         .join(PhotoTournament, PhotoTournament.winner_photo_id == Photo.id)
         .group_by(User.id)
         .order_by(func.count(PhotoTournament.id).desc(), User.id.asc())
