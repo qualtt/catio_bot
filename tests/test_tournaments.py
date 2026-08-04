@@ -600,7 +600,7 @@ async def test_send_tournament_results_notifications_marks_sent_at(db_session):
 
     assert sent_count == 1
     assert failed_count == 0
-    assert len(bot.messages) == 1
+    assert len(bot.messages) == 2
     assert "Победитель: /photo_" in bot.messages[0]["caption"]
     assert tournament.results_notification_sent_at is not None
 

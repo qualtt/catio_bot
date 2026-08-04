@@ -119,14 +119,25 @@ async def send_tournament_results_notifications(
     users = list((await session.execute(select(User).order_by(User.id.asc()))).scalars())
     sent_count = 0
     failed_count = 0
-    is_document = False
+    # 1. Prepare winner photo
+    photo = await session.get(Photo, tournament.winner_photo_id)
+    if photo is None:
+        logger.error(f"Winner photo {tournament.winner_photo_id} not found for tournament {tournament.id}")
+        return 0, 0
 
+    winner_photo_input = photo.telegram_file_id
+    if not winner_photo_input:
+        photo_data = await download_photo(storage_bucket=photo.storage_bucket, storage_key=photo.storage_key)
+        winner_photo_input = BufferedInputFile(photo_data, filename=f"winner-{photo.id}.jpg")
+
+    winner_photo_str = winner_photo_input if isinstance(winner_photo_input, str) else None
+
+    # 2. Prepare bracket document
     bracket_bytes = await generate_tournament_bracket_image(session, tournament.id)
+    bracket_input = None
+    bracket_str = None
     if bracket_bytes:
-        photo_input = BufferedInputFile(bracket_bytes, filename=f"bracket-{tournament.id}.png")
-        is_document = True
-
-        # Upload to S3
+        bracket_input = BufferedInputFile(bracket_bytes, filename=f"bracket-{tournament.id}.png")
         try:
             bucket = _require_bucket()
             key = f"tournaments/bracket_{tournament.id}.png"
@@ -137,43 +148,37 @@ async def send_tournament_results_notifications(
             await asyncio.to_thread(upload)
         except Exception as e:
             logger.warning(f"Failed to upload bracket to S3: {e}")
-    else:
-        photo = await session.get(Photo, tournament.winner_photo_id)
-        if photo is None:
-            logger.error(f"Winner photo {tournament.winner_photo_id} not found for tournament {tournament.id}")
-            return 0, 0
-
-        photo_input = photo.telegram_file_id
-        if not photo_input:
-            photo_data = await download_photo(storage_bucket=photo.storage_bucket, storage_key=photo.storage_key)
-            photo_input = BufferedInputFile(photo_data, filename=f"winner-{photo.id}.jpg")
-
-    photo_input_str = photo_input if isinstance(photo_input, str) else None
 
     for user in users:
         try:
-            if is_document:
-                if not photo_input_str and isinstance(photo_input, BufferedInputFile):
-                    sent_msg = await bot.send_document(
-                        chat_id=user.telegram_id, document=photo_input, caption=text, request_timeout=300
+            # Send winner photo
+            if not winner_photo_str and isinstance(winner_photo_input, BufferedInputFile):
+                sent_msg = await bot.send_photo(
+                    chat_id=user.telegram_id, photo=winner_photo_input, caption=text, request_timeout=300
+                )
+                if sent_msg.photo:
+                    winner_photo_str = sent_msg.photo[-1].file_id
+                    winner_photo_input = winner_photo_str
+            else:
+                await bot.send_photo(
+                    chat_id=user.telegram_id, photo=winner_photo_input, caption=text, request_timeout=300
+                )
+
+            # Send bracket document if available
+            if bracket_input:
+                bracket_caption = bot_content.message("tournament_bracket_caption")
+                if not bracket_str and isinstance(bracket_input, BufferedInputFile):
+                    sent_doc = await bot.send_document(
+                        chat_id=user.telegram_id, document=bracket_input, caption=bracket_caption, request_timeout=300
                     )
-                    if sent_msg.document:
-                        photo_input_str = sent_msg.document.file_id
-                        photo_input = photo_input_str
+                    if sent_doc.document:
+                        bracket_str = sent_doc.document.file_id
+                        bracket_input = bracket_str
                 else:
                     await bot.send_document(
-                        chat_id=user.telegram_id, document=photo_input, caption=text, request_timeout=300
+                        chat_id=user.telegram_id, document=bracket_input, caption=bracket_caption, request_timeout=300
                     )
-            else:
-                if not photo_input_str and isinstance(photo_input, BufferedInputFile):
-                    sent_msg = await bot.send_photo(
-                        chat_id=user.telegram_id, photo=photo_input, caption=text, request_timeout=300
-                    )
-                    if sent_msg.photo:
-                        photo_input_str = sent_msg.photo[-1].file_id
-                        photo_input = photo_input_str
-                else:
-                    await bot.send_photo(chat_id=user.telegram_id, photo=photo_input, caption=text, request_timeout=300)
+
             sent_count += 1
         except TelegramAPIError as error:
             failed_count += 1
