@@ -1,7 +1,8 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models.photo_tournament import PhotoTournamentVote
+from db.models.photo import Photo
+from db.models.photo_tournament import PhotoTournament, PhotoTournamentVote
 from db.models.post import Post, PostStatus
 from db.models.user import User
 
@@ -47,6 +48,18 @@ async def get_top_users_by_posts(session: AsyncSession, limit: int = 10) -> list
         .where(Post.status.in_([PostStatus.APPROVED, PostStatus.PUBLISHED]))
         .group_by(User.id)
         .order_by(func.count(Post.id).desc(), User.id.asc())
+        .limit(limit)
+    )
+    return list(await session.execute(stmt))
+
+
+async def get_top_users_by_tournaments(session: AsyncSession, limit: int = 10) -> list[tuple[User, int]]:
+    stmt = (
+        select(User, func.count(PhotoTournament.id))
+        .join(Photo, Photo.user_id == User.id)
+        .join(PhotoTournament, PhotoTournament.winner_photo_id == Photo.id)
+        .group_by(User.id)
+        .order_by(func.count(PhotoTournament.id).desc(), User.id.asc())
         .limit(limit)
     )
     return list(await session.execute(stmt))

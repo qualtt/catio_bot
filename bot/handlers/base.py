@@ -26,6 +26,7 @@ from db.crud import (
     get_recent_user_posts,
     get_top_users,
     get_top_users_by_posts,
+    get_top_users_by_tournaments,
     get_user_post_stats,
     user_can_view_photo,
 )
@@ -338,6 +339,26 @@ async def top_handler(message: Message):
         bot_content.message("top_header", users="\n".join(lines)),
         reply_markup=get_leaderboard_kb("score"),
     )
+
+
+@base_router.callback_query(F.data == "top_tournaments")
+async def top_tournaments_callback(callback: CallbackQuery):
+    async with async_session() as session:
+        users_with_counts = await get_top_users_by_tournaments(session)
+
+    if not users_with_counts:
+        await callback.answer(bot_content.message("top_empty"))
+        return
+
+    lines = []
+    for index, (user, count) in enumerate(users_with_counts, start=1):
+        name = user.username or user.full_name or "Аноним"
+        lines.append(bot_content.message("top_line_tournaments", position=index, name=name, count=count))
+
+    text = bot_content.message("top_header", users="\n".join(lines))
+    if callback.message and callback.message.text != text:
+        await callback.message.edit_text(text, reply_markup=get_leaderboard_kb("tournaments"))
+    await callback.answer()
 
 
 @base_router.callback_query(F.data == "top_score")

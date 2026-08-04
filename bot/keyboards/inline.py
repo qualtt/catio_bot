@@ -525,7 +525,12 @@ def get_leaderboard_kb(current_tab: str) -> InlineKeyboardMarkup:
     if current_tab == "posts":
         posts_text = f"• {posts_text} •"
 
+    tournaments_text = bot_content.button("top_tab_tournaments")
+    if current_tab == "tournaments":
+        tournaments_text = f"• {tournaments_text} •"
+
     builder.button(text=score_text, callback_data="top_score")
     builder.button(text=posts_text, callback_data="top_posts")
-    builder.adjust(2)
+    builder.button(text=tournaments_text, callback_data="top_tournaments")
+    builder.adjust(2, 1)
     return builder.as_markup()
