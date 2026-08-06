@@ -261,7 +261,7 @@ async def handle_dash_submit(callback: CallbackQuery, state: FSMContext, bot: Bo
 
     try:
         async with async_session() as session:
-            # Check if slot is still free if manual
+            # Check if slot is still free if manual, otherwise recalculate
             if not is_auto_scheduled:
                 free_times = await get_free_slot_times(session, schedule_time.date())
                 if schedule_time.timetz().replace(tzinfo=None) not in free_times:
@@ -272,6 +272,8 @@ async def handle_dash_submit(callback: CallbackQuery, state: FSMContext, bot: Bo
                     )
                     await _render_dashboard(callback, state, bot)
                     return
+            else:
+                schedule_time = await get_next_auto_slot(session, animal_type=animal_type)
 
             post = await create_post(
                 session,
@@ -370,13 +372,23 @@ async def handle_dash_submit_album(callback: CallbackQuery, state: FSMContext, b
         return
 
     await state.clear()
-    # It might be mixed auto/manual, so we just use the album submitted text
+
+    comments = []
+    for i, it in enumerate(items, 1):
+        ai_comment = (it.get("gemini") or {}).get("comment")
+        if ai_comment:
+            comments.append(f"Фото {i}: {ai_comment}")
+
+    success_text = bot_content.message(
+        "album_submitted_auto",
+        schedules=_album_schedule_summary(posts),
+    )
+    if comments:
+        success_text += "\n\n💬 Комментарии ИИ:\n" + "\n".join(comments)
+
     await _edit_message_text_or_caption(
         callback.message,
-        bot_content.message(
-            "album_submitted_auto",  # or album_submitted_manual
-            schedules=_album_schedule_summary(posts),
-        ),
+        success_text,
     )
     await _send_album_submission_to_admin(bot, posts=posts, author=author)
     await callback.answer()
