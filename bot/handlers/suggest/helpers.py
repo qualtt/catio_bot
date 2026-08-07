@@ -55,7 +55,7 @@ def _format_dashboard_time(item: dict) -> str:
     return "Не выбрано"
 
 
-def _photo_dashboard_text(data: dict, *, is_album: bool) -> str:
+def _photo_dashboard_text(data: dict, *, is_album: bool, is_submitted: bool = False) -> str:
     if is_album:
         items = _album_items(data)
         index = int(data.get("album_index") or 0)
@@ -94,6 +94,13 @@ def _photo_dashboard_text(data: dict, *, is_album: bool) -> str:
     # Remove index header for single photos
     if not is_album:
         text = text.replace(f"📸 Фото {display_index} из {total}\n\n", "")
+
+    if is_submitted:
+        prefix = "✅ Альбом успешно отправлен\n\n" if is_album else "✅ Фото успешно отправлено\n\n"
+        text = prefix + text
+
+        if is_album and "submitted_schedules_summary" in data:
+            text += f"\n\nРасписание:\n{data['submitted_schedules_summary']}"
 
     return append_duplicate_note(
         text,

@@ -34,8 +34,16 @@ def _add_album_nav_buttons(builder: InlineKeyboardBuilder, *, with_album_nav: bo
     builder.button(text=bot_content.button("album_next"), callback_data="album_next")
 
 
-def get_photo_dashboard_kb(*, is_album: bool, can_submit: bool, album_length: int = 1) -> InlineKeyboardMarkup:
+def get_photo_dashboard_kb(
+    *, is_album: bool, can_submit: bool, album_length: int = 1, is_submitted: bool = False
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+
+    if is_submitted:
+        if is_album:
+            _add_album_nav_buttons(builder, with_album_nav=True)
+            builder.adjust(2)
+        return builder.as_markup()
 
     auto_points = int(config.SCORE_APPROVED_POST_BASE * (1 + config.SCORE_AUTO_BONUS_PERCENT / 100.0))
     manual_points = config.SCORE_APPROVED_POST_BASE

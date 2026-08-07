@@ -49,13 +49,16 @@ async def _render_dashboard(callback: CallbackQuery, state: FSMContext, bot: Bot
     data = await state.get_data()
     if _is_album_submission(data):
         items = _album_items(data)
+        is_submitted = data.get("is_submitted", False)
         can_submit = all(
             it.get("animal_type") and (it.get("schedule_time") or it.get("is_auto_scheduled")) for it in items
         )
         await _edit_callback_prompt(
             callback,
-            _photo_dashboard_text(data, is_album=True),
-            reply_markup=get_photo_dashboard_kb(is_album=True, can_submit=can_submit, album_length=len(items)),
+            _photo_dashboard_text(data, is_album=True, is_submitted=is_submitted),
+            reply_markup=get_photo_dashboard_kb(
+                is_album=True, can_submit=can_submit, album_length=len(items), is_submitted=is_submitted
+            ),
         )
 
 
@@ -371,25 +374,11 @@ async def handle_dash_submit_album(callback: CallbackQuery, state: FSMContext, b
         )
         return
 
-    await state.clear()
+    data["is_submitted"] = True
+    data["submitted_schedules_summary"] = _album_schedule_summary(posts)
+    await state.update_data(**data)
 
-    comments = []
-    for i, it in enumerate(items, 1):
-        ai_comment = (it.get("gemini") or {}).get("comment")
-        if ai_comment:
-            comments.append(f"Фото {i}: {ai_comment}")
-
-    success_text = bot_content.message(
-        "album_submitted_auto",
-        schedules=_album_schedule_summary(posts),
-    )
-    if comments:
-        success_text += "\n\n💬 Комментарии ИИ:\n" + "\n".join(comments)
-
-    await _edit_message_text_or_caption(
-        callback.message,
-        success_text,
-    )
+    await _render_dashboard(callback, state, bot)
     await _send_album_submission_to_admin(bot, posts=posts, author=author)
     await callback.answer()
 
