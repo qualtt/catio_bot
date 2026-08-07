@@ -166,14 +166,17 @@ async def _send_album_item_prompt(
     index = int(data.get("album_index") or 0)
     item = items[index]
 
-    caption = _photo_dashboard_text(data, is_album=True)
+    is_submitted = data.get("is_submitted", False)
+    caption = _photo_dashboard_text(data, is_album=True, is_submitted=is_submitted)
     if include_warning:
         caption += "\n\n" + bot_content.message("album_duplicate_warning")
 
     from bot.keyboards.inline import get_photo_dashboard_kb
 
     can_submit = all(it.get("animal_type") and (it.get("schedule_time") or it.get("is_auto_scheduled")) for it in items)
-    reply_markup = get_photo_dashboard_kb(is_album=True, can_submit=can_submit, album_length=len(items))
+    reply_markup = get_photo_dashboard_kb(
+        is_album=True, can_submit=can_submit, album_length=len(items), is_submitted=is_submitted
+    )
 
     prompt_chat_id = data.get("album_prompt_chat_id")
     prompt_message_id = data.get("album_prompt_message_id")
