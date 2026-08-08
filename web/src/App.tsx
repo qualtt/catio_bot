@@ -33,7 +33,12 @@ export const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
 
-  useEffect(() => {
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const performAuth = () => {
+    setAuthLoading(true);
+    setAuthError(null);
+
     const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.ready();
@@ -42,7 +47,6 @@ export const App: React.FC = () => {
 
     const initData = tg?.initData || '';
 
-    // If running in Telegram WebApp context
     if (initData) {
       axios
         .post(`${API_BASE}/auth/telegram`, { init_data: initData })
@@ -50,10 +54,12 @@ export const App: React.FC = () => {
           setToken(res.data.token);
           setIsAdmin(res.data.user.is_admin);
         })
-        .catch((err) => console.error("Telegram auth failed", err))
+        .catch((err) => {
+          console.error("Telegram auth failed", err);
+          setAuthError("Сервер перезагружается или временно недоступен.");
+        })
         .finally(() => setAuthLoading(false));
     } else if (import.meta.env.DEV) {
-      // Local dev fallback when running local dev server (npm run dev)
       axios
         .post(`${API_BASE}/auth/dev-login`)
         .then((res) => {
@@ -65,6 +71,10 @@ export const App: React.FC = () => {
     } else {
       setAuthLoading(false);
     }
+  };
+
+  useEffect(() => {
+    performAuth();
   }, []);
 
   if (authLoading) {
@@ -72,6 +82,27 @@ export const App: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-color)' }}>
         <div style={{ textAlign: 'center' }}>
           <h3 style={{ fontSize: 16, color: 'var(--hint-color)' }}>Загрузка Catio...</h3>
+        </div>
+      </div>
+    );
+  }
+
+  // If auth error (e.g. 502 Bad Gateway during deploy)
+  if (authError && !token) {
+    return (
+      <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div className="glass-panel" style={{ padding: 30, textAlign: 'center' }}>
+          <h2 className="gradient-text" style={{ fontSize: 24, fontWeight: 800, marginBottom: 12 }}>Catio Mini App</h2>
+          <p style={{ fontSize: 14, color: 'var(--hint-color)', marginBottom: 20 }}>
+            {authError}
+          </p>
+          <button
+            onClick={performAuth}
+            className="btn-primary"
+            style={{ border: 'none', cursor: 'pointer' }}
+          >
+            Повторить попытку 🔄
+          </button>
         </div>
       </div>
     );
@@ -87,7 +118,7 @@ export const App: React.FC = () => {
             Пожалуйста, откройте это приложение через Telegram бота для авторизации.
           </p>
           <a
-            href="https://t.me/CatioBot"
+            href="https://t.me/catio_bot"
             target="_blank"
             rel="noreferrer"
             className="btn-primary"
