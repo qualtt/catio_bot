@@ -108,19 +108,20 @@ export const TournamentTab: React.FC<TournamentTabProps> = ({ apiBase, token }) 
   return (
     <div className="animate-fade-in" style={{ padding: 16 }}>
       {/* Header Banner */}
-      <div className="glass-panel" style={{ padding: 16, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <span className="badge badge-purple">
-              <Flame size={14} /> {data.type === 'weekly' ? 'Еженедельный кубок' : 'Ежемесячный кубок'}
-            </span>
-            <span className="badge badge-amber">{data.period_label}</span>
+      <div className="glass-panel" style={{ padding: 16, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 800 }}>Турнир</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(56, 189, 248, 0.15)', padding: '4px 10px', borderRadius: 12, border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+            <span style={{ fontSize: 12, color: 'var(--hint-color)' }}>Голосовало:</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: '#38bdf8' }}>{data.voter_count} 👥</span>
           </div>
-          <h2 style={{ fontSize: 18, fontWeight: 700 }}>Турнирный Плей-офф</h2>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 12, color: 'var(--hint-color)' }}>Голосовало</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#38bdf8' }}>{data.voter_count} 👥</div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <span className="badge badge-purple">
+            <Flame size={14} /> {data.type === 'weekly' ? 'Еженедельный кубок' : 'Ежемесячный кубок'}
+          </span>
+          <span className="badge badge-amber">{data.period_label}</span>
         </div>
       </div>
 
