@@ -11,3 +11,7 @@ Pillow==10.4.0
 Pyrogram==2.0.106
 tgcrypto==1.2.5
 aiohttp-socks==0.9.1
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pyjwt==2.10.1
+python-multipart==0.0.20

@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     BOT_TOKEN: str
     ADMIN_ID: int
     CHANNEL_ID: str
+    JWT_SECRET: str = "catio_super_secret_jwt_key_2026"
+    WEBAPP_URL: str = "https://catio.qualtt.ru"
 
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str

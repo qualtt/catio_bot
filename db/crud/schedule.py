@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from bot.config import config
 from db.models.post import Post, PostStatus
@@ -205,3 +206,20 @@ async def get_next_auto_slot(
             return combine_slot(curr_date, free_slots[0])
 
     return combine_slot(start_date + timedelta(days=max_days_to_scan), first_slot)
+
+
+async def get_scheduled_posts_for_date(session: AsyncSession, target_date: date) -> list[Post]:
+    start_dt = combine_slot(target_date, time.min)
+    end_dt = combine_slot(target_date + timedelta(days=1), time.min)
+
+    stmt = (
+        select(Post)
+        .options(selectinload(Post.user), selectinload(Post.photo))
+        .where(
+            Post.status.in_(OCCUPYING_STATUSES),
+            Post.schedule_time >= start_dt,
+            Post.schedule_time < end_dt,
+        )
+        .order_by(Post.schedule_time.asc())
+    )
+    return list((await session.execute(stmt)).scalars())

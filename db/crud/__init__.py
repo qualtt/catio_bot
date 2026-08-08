@@ -32,10 +32,13 @@ from .photos import (
     user_can_view_photo,
 )
 from .posts import (
+    approve_post,
     create_post,
+    get_pending_posts,
     get_post_by_id,
     get_recent_user_posts,
     get_user_post_stats,
+    reject_post,
 )
 from .schedule import (
     _selected_schedule_context,
@@ -44,6 +47,7 @@ from .schedule import (
     get_next_auto_slot,
     get_occupied_dates,
     get_schedule_occupancy,
+    get_scheduled_posts_for_date,
     get_slot_counts,
 )
 
@@ -59,6 +63,7 @@ from .users import (
     add_user_score,
     get_muted_users,
     get_or_create_user,
+    get_user_by_telegram_id,
     get_top_users,
     get_top_users_by_posts,
     get_top_users_by_tournaments,
