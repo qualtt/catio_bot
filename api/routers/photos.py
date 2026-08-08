@@ -12,7 +12,6 @@ from db.crud import (
     get_photo_by_id,
 )
 from db.database import async_session
-from db.models.photo import Photo
 from db.models.post import Post, PostStatus
 from db.models.user import User
 
@@ -25,7 +24,7 @@ from bot.services.gemini import analyze_photo_bytes
 from bot.services.photo_storage import optimize_image_bytes
 
 
-from db.crud import find_duplicate_photo, get_next_auto_slot
+from db.crud import create_photo, find_duplicate_photo, get_next_auto_slot
 
 
 class AnimalTypeResponse(BaseModel):
@@ -119,19 +118,17 @@ async def upload_photo_file(
         ai_comment = ai_analysis.get("comment")
 
     async with async_session() as session:
-        db_photo = Photo(
-            telegram_file_id="",
-            telegram_file_unique_id=None,
+        db_photo = await create_photo(
+            session,
             storage_bucket=stored.storage_bucket,
             storage_key=stored.storage_key,
+            telegram_file_id="",
+            telegram_file_unique_id=None,
             content_type=stored.content_type,
             file_size=stored.file_size,
             sha256=stored.sha256,
             perceptual_hash=stored.perceptual_hash,
         )
-        session.add(db_photo)
-        await session.commit()
-        await session.refresh(db_photo)
 
         dup_match = await find_duplicate_photo(session, db_photo)
         dup_photo_id = dup_match.photo_id if dup_match else None
