@@ -7,11 +7,6 @@ from db.models.post import Post, PostStatus
 from db.models.user import User
 
 
-async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> User | None:
-    stmt = select(User).where(User.telegram_id == telegram_id)
-    return (await session.execute(stmt)).scalar_one_or_none()
-
-
 async def get_or_create_user(
     session: AsyncSession,
     telegram_id: int,

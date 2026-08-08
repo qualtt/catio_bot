@@ -420,32 +420,22 @@ async def _create_album_posts(
     return posts
 
 
-from aiogram.types import BufferedInputFile
-
-
-async def send_single_submission_to_admin(
+async def _send_single_submission_to_admin(
     bot: Bot,
     *,
     post,
-    file_id: str | BufferedInputFile,
+    file_id: str,
     animal_type: str,
-    schedule_time: datetime | str | None,
+    schedule_time: datetime,
     author: str,
     ai_comment: str | None = None,
 ) -> None:
-    if not config.ADMIN_ID:
-        return
-
-    schedule_str = (
-        _format_schedule(schedule_time) if isinstance(schedule_time, datetime) else (schedule_time or "На модерации")
-    )
-
     await bot.send_photo(
         chat_id=config.ADMIN_ID,
         photo=file_id,
         caption=submission_caption(
             animal_type=animal_type,
-            schedule=schedule_str,
+            schedule=_format_schedule(schedule_time),
             author=author,
             duplicate_of_photo_id=post.duplicate_of_photo_id,
             duplicate_distance=post.duplicate_distance,
@@ -454,9 +444,6 @@ async def send_single_submission_to_admin(
         reply_markup=get_admin_approval_kb(post.id, post.user_id),
     )
     await _send_duplicate_original_to_admin(bot, post=post)
-
-
-_send_single_submission_to_admin = send_single_submission_to_admin
 
 
 async def _send_duplicate_original_to_admin(bot: Bot, *, post) -> None:

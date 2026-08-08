@@ -15,36 +15,34 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y nginx certbot python3-certbot-nginx
 
-echo "Configuring Nginx for catio.qualtt.ru..."
-cat <<'EOF' > /etc/nginx/sites-available/catio.qualtt.ru
+echo "Configuring Nginx basic..."
+cat <<'EOF' > /etc/nginx/sites-available/dash.qualtt.ru
 server {
     listen 80;
-    server_name catio.qualtt.ru;
-    client_max_body_size 50M;
+    server_name dash.qualtt.ru;
 
-    # Static Web App React build
     location / {
-        root /app/web/dist;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-    }
-
-    # FastAPI REST API Backend
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass https://127.0.0.1:8443;
+        proxy_ssl_verify off;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSockets support for terminal
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/catio.qualtt.ru /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/dash.qualtt.ru /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
 systemctl restart nginx
 
-echo "Running Certbot for catio.qualtt.ru..."
-certbot --nginx -d catio.qualtt.ru --non-interactive --agree-tos --register-unsafely-without-email --redirect
+echo "Running Certbot..."
+certbot --nginx -d dash.qualtt.ru --non-interactive --agree-tos --register-unsafely-without-email --redirect
 
 systemctl restart nginx
-echo "SSL configured successfully for catio.qualtt.ru!"
+echo "SSL configured successfully!"

@@ -1,6 +1,6 @@
 from datetime import date, time, timedelta
 
-from aiogram.types import InlineKeyboardMarkup, WebAppInfo
+from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.config import config
@@ -21,7 +21,6 @@ def _two_column_rows(item_count: int, footer_count: int = 0) -> list[int]:
 
 def get_main_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="📱 Открыть Mini App", web_app=WebAppInfo(url=config.WEBAPP_URL))
     builder.button(text=bot_content.button("identify_old_photos"), callback_data="identify_next")
     builder.button(text=bot_content.button("photo_tournament"), callback_data="tourn_current")
     builder.adjust(1)

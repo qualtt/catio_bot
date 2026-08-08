@@ -40,11 +40,6 @@ MANIFEST
 pgdata/
 redisdata/
 
-# Node / Frontend
-web/node_modules/
-web/dist/
-.DS_Store
-
 # IDEs
 .idea/
 .vscode/

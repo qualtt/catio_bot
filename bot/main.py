@@ -38,12 +38,6 @@ async def main():
 
     logger.info("Starting bot...")
     await bot.delete_webhook(drop_pending_updates=True)
-    with suppress(Exception):
-        from aiogram.types import MenuButtonWebApp, WebAppInfo
-
-        await bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(text="Mini App", web_app=WebAppInfo(url=config.WEBAPP_URL))
-        )
     publisher_task = asyncio.create_task(publisher_loop(bot))
     cleanup_task = asyncio.create_task(cleanup_loop())
     try:

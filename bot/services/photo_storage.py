@@ -137,33 +137,6 @@ def hamming_distance(left: str | None, right: str | None) -> int | None:
         return None
 
 
-from PIL import ImageOps
-
-
-def optimize_image_bytes(data: bytes, max_dimension: int = 1920, quality: int = 85) -> tuple[bytes, str]:
-    """
-    Optimizes and compresses uploaded images:
-    - Auto-transposes EXIF orientation (fixing rotated iPhone photos)
-    - Resizes to max_dimension (1920px) while maintaining aspect ratio
-    - Encodes to JPEG with 85% quality to save S3 storage and bandwidth
-    """
-    try:
-        with Image.open(io.BytesIO(data)) as img:
-            img = ImageOps.exif_transpose(img)
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
-
-            width, height = img.size
-            if max(width, height) > max_dimension:
-                img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-
-            out = io.BytesIO()
-            img.save(out, format="JPEG", quality=quality, optimize=True)
-            return out.getvalue(), "image/jpeg"
-    except Exception:
-        return data, "image/jpeg"
-
-
 def photo_metadata_from_bytes(
     *,
     data: bytes,
@@ -188,7 +161,6 @@ async def upload_photo_bytes(
     content_type: str | None = None,
 ) -> StoredPhoto:
     bucket = _require_bucket()
-    data, content_type = optimize_image_bytes(data)
     metadata = photo_metadata_from_bytes(data=data, file_path=file_path, content_type=content_type)
     storage_key = _storage_key(source, metadata.sha256, file_path)
 
