@@ -3,6 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel
 
+import logging
+
 from api.auth import get_current_user
 from bot.services.photo_storage import download_photo, upload_photo_bytes
 from db.crud import (
@@ -13,6 +15,8 @@ from db.database import async_session
 from db.models.photo import Photo
 from db.models.post import Post, PostStatus
 from db.models.user import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/photos", tags=["Photos"])
 
@@ -125,6 +129,47 @@ async def upload_photo_file(
         )
         session.add(db_post)
         await session.commit()
+        await session.refresh(db_post)
+
+    author_name = current_user.full_name or (
+        f"@{current_user.username}" if current_user.username else f"ID: {current_user.telegram_id}"
+    )
+
+    async def _notify_admin():
+        from aiogram import Bot
+        from aiogram.client.default import DefaultBotProperties
+        from aiogram.client.session.aiohttp import AiohttpSession
+        from aiogram.types import BufferedInputFile
+
+        from bot.config import config
+        from bot.handlers.suggest.actions import send_single_submission_to_admin
+
+        if not config.ADMIN_ID:
+            return
+
+        proxy = config.TELEGRAM_PROXY_URL
+        session = AiohttpSession(proxy=proxy) if proxy else None
+        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"), session=session)
+
+        try:
+            input_file = BufferedInputFile(contents, filename="webapp_photo.jpg")
+            await send_single_submission_to_admin(
+                bot,
+                post=db_post,
+                file_id=input_file,
+                animal_type=animal_type or "Кот",
+                schedule_time="На модерации (Mini App)",
+                author=f"{author_name} (через Mini App 📱)",
+                ai_comment=ai_comment,
+            )
+        except Exception as err:
+            logger.exception("Failed to send admin notification for webapp post %s: %s", db_post.id, err)
+        finally:
+            await bot.session.close()
+
+    import asyncio
+
+    asyncio.create_task(_notify_admin())
 
     return UploadPhotoResponse(
         photo_id=db_photo.id,
