@@ -52,8 +52,8 @@ export const App: React.FC = () => {
         })
         .catch((err) => console.error("Telegram auth failed", err))
         .finally(() => setAuthLoading(false));
-    } else {
-      // Local dev fallback when testing directly in browser
+    } else if (import.meta.env.DEV) {
+      // Local dev fallback when running local dev server (npm run dev)
       axios
         .post(`${API_BASE}/auth/dev-login`)
         .then((res) => {
@@ -62,6 +62,8 @@ export const App: React.FC = () => {
         })
         .catch((err) => console.error("Dev login failed", err))
         .finally(() => setAuthLoading(false));
+    } else {
+      setAuthLoading(false);
     }
   }, []);
 
@@ -70,6 +72,29 @@ export const App: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-color)' }}>
         <div style={{ textAlign: 'center' }}>
           <h3 style={{ fontSize: 16, color: 'var(--hint-color)' }}>Загрузка Catio...</h3>
+        </div>
+      </div>
+    );
+  }
+
+  // If outside Telegram WebApp in production without initData
+  if (!token && !import.meta.env.DEV) {
+    return (
+      <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div className="glass-panel" style={{ padding: 30, textAlign: 'center' }}>
+          <h2 className="gradient-text" style={{ fontSize: 24, fontWeight: 800, marginBottom: 12 }}>Catio Mini App</h2>
+          <p style={{ fontSize: 14, color: 'var(--hint-color)', marginBottom: 20 }}>
+            Пожалуйста, откройте это приложение через Telegram бота для авторизации.
+          </p>
+          <a
+            href="https://t.me/CatioBot"
+            target="_blank"
+            rel="noreferrer"
+            className="btn-primary"
+            style={{ textDecoration: 'none', display: 'inline-flex' }}
+          >
+            Перейти в Telegram Бота ✈️
+          </a>
         </div>
       </div>
     );

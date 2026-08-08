@@ -194,7 +194,7 @@ export const TournamentTab: React.FC<TournamentTabProps> = ({ apiBase, token }) 
           <img
             src={`${apiBase}/photos/${data.champion_photo_id}/image`}
             alt="Ваш фаворит"
-            style={{ width: '100%', maxHeight: '250px', objectFit: 'cover', borderRadius: 16 }}
+            style={{ width: '100%', maxHeight: '360px', objectFit: 'contain', borderRadius: 16, background: 'rgba(0, 0, 0, 0.3)' }}
           />
         </div>
       ) : (
