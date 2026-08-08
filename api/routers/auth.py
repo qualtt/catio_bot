@@ -66,13 +66,13 @@ async def dev_login():
     Development login endpoint for testing outside Telegram WebApp environment.
     Uses ADMIN_ID to allow local admin testing.
     """
-    dev_telegram_id = config.ADMIN_ID or 123456789
+    dev_telegram_id = -99999
     async with async_session() as session:
         user = await get_or_create_user(
             session,
             telegram_id=dev_telegram_id,
             username="dev_user",
-            full_name="Разработчик Catio",
+            full_name="Тестовый Игрок",
         )
 
     token = create_access_token(user.id, user.telegram_id, is_admin=True)
