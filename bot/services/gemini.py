@@ -22,18 +22,12 @@ async def get_animal_prompt_options() -> str:
     return "/".join(names)
 
 
-async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
-    if not config.GEMINI_API_KEY:
+async def analyze_photo_bytes(data: bytes) -> dict | None:
+    if not config.ENABLE_GEMINI or not config.GEMINI_API_KEY:
         return None
 
     try:
-        # Download photo
-        telegram_file = await bot.get_file(file_id)
-        buffer = io.BytesIO()
-        await bot.download_file(telegram_file.file_path, destination=buffer)
-        image_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        # Get options
+        image_data = base64.b64encode(data).decode("utf-8")
         options_str = await get_animal_prompt_options()
 
         prompt = (
@@ -64,7 +58,6 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
             "generationConfig": {"response_mime_type": "application/json"},
         }
 
-        # Strip trailing slash if present
         base_url = config.GEMINI_BASE_URL.rstrip("/")
         url = f"{base_url}/v1beta/models/{config.GEMINI_MODEL}:generateContent?key={config.GEMINI_API_KEY}"
 
@@ -79,7 +72,7 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
             from aiohttp_socks import ProxyConnector
 
             session_kwargs["connector"] = ProxyConnector.from_url(config.GEMINI_PROXY_URL)
-            post_proxy = None  # aiohttp_socks uses connector, not proxy param
+            post_proxy = None
 
         async with (
             aiohttp.ClientSession(**session_kwargs) as session,
@@ -99,12 +92,11 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
                 logger.error("Gemini API error %s: %s", response.status, text)
                 return None
 
-            data = await response.json()
+            data_res = await response.json()
 
-        result_text = data["candidates"][0]["content"]["parts"][0]["text"]
+        result_text = data_res["candidates"][0]["content"]["parts"][0]["text"]
         result = json.loads(result_text)
 
-        # Validate returned animal
         valid_options = options_str.split("/")
         valid_options_lower = [opt.lower() for opt in valid_options]
         if result.get("is_valid"):
@@ -114,11 +106,24 @@ async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
                 result["is_valid"] = False
                 result["reason"] = f"Нейросеть не смогла определить тип из списка ({animal})."
             else:
-                # Сохраняем оригинальный регистр из базы данных
                 idx = valid_options_lower.index(animal.lower())
                 result["animal"] = valid_options[idx]
 
         return result
+    except Exception:
+        logger.exception("Failed to analyze photo bytes with Gemini")
+        return None
+
+
+async def analyze_photo(bot: Bot, file_id: str) -> dict | None:
+    if not config.GEMINI_API_KEY:
+        return None
+
+    try:
+        telegram_file = await bot.get_file(file_id)
+        buffer = io.BytesIO()
+        await bot.download_file(telegram_file.file_path, destination=buffer)
+        return await analyze_photo_bytes(buffer.getvalue())
     except Exception:
         logger.exception("Failed to analyze photo with Gemini")
         return None

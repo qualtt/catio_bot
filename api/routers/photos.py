@@ -17,6 +17,9 @@ from db.models.user import User
 router = APIRouter(prefix="/photos", tags=["Photos"])
 
 
+from bot.services.gemini import analyze_photo_bytes
+
+
 class AnimalTypeResponse(BaseModel):
     id: int
     name: str
@@ -27,6 +30,7 @@ class UploadPhotoResponse(BaseModel):
     photo_id: int
     sha256: str
     animal_type: str | None
+    ai_comment: str | None = None
     message: str
 
 
@@ -87,6 +91,13 @@ async def upload_photo_file(
         content_type=file.content_type,
     )
 
+    ai_analysis = await analyze_photo_bytes(contents)
+    ai_comment = None
+    if ai_analysis and ai_analysis.get("is_valid"):
+        if not animal_type and ai_analysis.get("animal"):
+            animal_type = ai_analysis["animal"]
+        ai_comment = ai_analysis.get("comment")
+
     async with async_session() as session:
         db_photo = Photo(
             telegram_file_id="",
@@ -117,5 +128,6 @@ async def upload_photo_file(
         photo_id=db_photo.id,
         sha256=db_photo.sha256,
         animal_type=animal_type,
+        ai_comment=ai_comment,
         message="Photo uploaded successfully",
     )

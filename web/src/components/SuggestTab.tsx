@@ -59,7 +59,11 @@ export const SuggestTab: React.FC<SuggestTabProps> = ({ apiBase, token }) => {
         },
       });
 
-      setSuccessMsg(`Фото ушло на модерацию! (ID: ${res.data.photo_id})`);
+      let msg = `Фото ушло на модерацию! (ID: ${res.data.photo_id})`;
+      if (res.data.ai_comment) {
+        msg += `\n🤖 ИИ говорит: "${res.data.ai_comment}"`;
+      }
+      setSuccessMsg(msg);
       setSelectedFile(null);
       setPreviewUrl(null);
       setSelectedType(null);
@@ -81,7 +85,7 @@ export const SuggestTab: React.FC<SuggestTabProps> = ({ apiBase, token }) => {
       </div>
 
       {successMsg && (
-        <div className="glass-panel" style={{ padding: 16, marginBottom: 16, borderLeft: '4px solid #34d399', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="glass-panel" style={{ padding: 16, marginBottom: 16, borderLeft: '4px solid #34d399', display: 'flex', alignItems: 'center', gap: 12, whiteSpace: 'pre-line' }}>
           <CheckCircle color="#34d399" size={24} />
           <span style={{ fontSize: 14, fontWeight: 600 }}>{successMsg}</span>
         </div>
