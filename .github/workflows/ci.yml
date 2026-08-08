@@ -46,8 +46,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-asyncio aiosqlite
+        pip install -r requirements-dev.txt
 
     - name: Run tests
       env:
@@ -74,13 +73,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Web App
+        run: |
+          cd web
+          npm ci || npm install
+          npm run build
+
       - name: Copy app files to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: "Dockerfile,alembic,alembic.ini,bot,bot_content.json,db,docker-compose.yml,requirements.txt"
+          source: "Dockerfile,alembic,alembic.ini,api,bot,bot_content.json,db,docker-compose.yml,requirements.txt,setup_nginx.sh,web"
           target: "/opt/catio_bot"
 
       - name: Run migrations and restart
@@ -92,6 +102,6 @@ jobs:
           script: |
             cd /opt/catio_bot
             test -f .env
-            docker compose build bot
+            docker compose build
             docker compose run --rm bot alembic upgrade head
             docker compose up -d --remove-orphans
