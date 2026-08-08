@@ -90,15 +90,15 @@ export const LeaderboardTab: React.FC<LeaderboardTabProps> = ({ apiBase, token }
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 16, textAlign: 'center' }}>
             <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: 10, borderRadius: 12 }}>
               <div style={{ fontSize: 11, color: 'var(--hint-color)' }}>Одобрено</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#34d399' }}>{profile.stats.APPROVED || 0}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#34d399' }}>{profile.stats.APPROVED ?? profile.stats.approved ?? 0}</div>
             </div>
             <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: 10, borderRadius: 12 }}>
               <div style={{ fontSize: 11, color: 'var(--hint-color)' }}>В очереди</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fbbf24' }}>{profile.stats.PENDING || 0}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fbbf24' }}>{profile.stats.PENDING ?? profile.stats.pending ?? 0}</div>
             </div>
             <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: 10, borderRadius: 12 }}>
               <div style={{ fontSize: 11, color: 'var(--hint-color)' }}>Опубликовано</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#c084fc' }}>{profile.stats.PUBLISHED || 0}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#c084fc' }}>{profile.stats.PUBLISHED ?? profile.stats.published ?? 0}</div>
             </div>
           </div>
         </div>

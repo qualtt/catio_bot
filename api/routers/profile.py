@@ -34,7 +34,11 @@ async def get_profile(current_user: Annotated[User, Depends(get_current_user)]):
     async with async_session() as session:
         stats = await get_user_post_stats(session, current_user.id)
 
-    formatted_stats = {str(k.value if hasattr(k, "value") else k): v for k, v in stats.items()}
+    formatted_stats = {}
+    for k, v in stats.items():
+        key_str = str(k.value if hasattr(k, "value") else k)
+        formatted_stats[key_str] = v
+        formatted_stats[key_str.upper()] = v
 
     return ProfileResponse(
         id=current_user.id,
