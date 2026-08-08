@@ -18,6 +18,7 @@ router = APIRouter(prefix="/photos", tags=["Photos"])
 
 
 from bot.services.gemini import analyze_photo_bytes
+from bot.services.photo_storage import optimize_image_bytes
 
 
 class AnimalTypeResponse(BaseModel):
@@ -82,13 +83,15 @@ async def upload_photo_file(
     if not contents:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty")
 
+    contents, content_type = optimize_image_bytes(contents)
+
     stored = await upload_photo_bytes(
         data=contents,
         file_id="",  # Web app upload
         file_unique_id=None,
         source="webapp",
         file_path=file.filename,
-        content_type=file.content_type,
+        content_type=content_type,
     )
 
     ai_analysis = await analyze_photo_bytes(contents)
