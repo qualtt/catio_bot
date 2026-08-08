@@ -111,7 +111,6 @@ async def upload_photo_file(
             file_size=stored.file_size,
             sha256=stored.sha256,
             perceptual_hash=stored.perceptual_hash,
-            user_id=current_user.id,
         )
         session.add(db_photo)
         await session.commit()
