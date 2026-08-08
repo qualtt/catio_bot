@@ -11,6 +11,7 @@ from db.crud import (
 )
 from db.database import async_session
 from db.models.photo import Photo
+from db.models.post import Post, PostStatus
 from db.models.user import User
 
 router = APIRouter(prefix="/photos", tags=["Photos"])
@@ -101,6 +102,16 @@ async def upload_photo_file(
         session.add(db_photo)
         await session.commit()
         await session.refresh(db_photo)
+
+        db_post = Post(
+            user_id=current_user.id,
+            photo_id=db_photo.id,
+            file_id="",
+            animal_type=animal_type or "Кот",
+            status=PostStatus.PENDING,
+        )
+        session.add(db_post)
+        await session.commit()
 
     return UploadPhotoResponse(
         photo_id=db_photo.id,

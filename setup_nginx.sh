@@ -20,6 +20,7 @@ cat <<'EOF' > /etc/nginx/sites-available/catio.qualtt.ru
 server {
     listen 80;
     server_name catio.qualtt.ru;
+    client_max_body_size 50M;
 
     # Static Web App React build
     location / {
