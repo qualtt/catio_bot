@@ -165,3 +165,68 @@ async def send_admin_schedule(target, target_date: date, *, callback_text: str |
         await target.answer(callback_text)
         return
     await target.answer(text, reply_markup=reply_markup)
+
+
+async def send_pending_posts_to_admin(bot: Bot, target) -> None:
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    async with async_session() as session:
+        stmt = (
+            select(Post)
+            .options(selectinload(Post.user), selectinload(Post.duplicate_of_photo))
+            .where(Post.status == PostStatus.PENDING)
+            .order_by(Post.created_at.asc())
+        )
+        pending_posts = list((await session.execute(stmt)).scalars())
+
+    if not pending_posts:
+        if isinstance(target, CallbackQuery):
+            await target.answer(bot_content.message("admin_no_pending_posts"), show_alert=True)
+        else:
+            await target.answer(bot_content.message("admin_no_pending_posts"))
+        return
+
+    groups: list[list[Post]] = []
+    group_map: dict[str, list[Post]] = {}
+
+    for post in pending_posts:
+        if post.submission_group_id:
+            if post.submission_group_id not in group_map:
+                group_list = []
+                group_map[post.submission_group_id] = group_list
+                groups.append(group_list)
+            group_map[post.submission_group_id].append(post)
+        else:
+            groups.append([post])
+
+    count_msg = bot_content.message(
+        "admin_pending_posts_count",
+        posts_count=len(pending_posts),
+        submissions_count=len(groups),
+    )
+    if isinstance(target, CallbackQuery):
+        await target.message.answer(count_msg)
+        await target.answer()
+    else:
+        await target.answer(count_msg)
+
+    from bot.handlers.suggest.actions import (
+        _send_album_submission_to_admin,
+        _send_single_submission_to_admin,
+    )
+
+    for group in groups:
+        author = post_author(group[0])
+        if len(group) == 1 and group[0].submission_group_id is None:
+            post = group[0]
+            await _send_single_submission_to_admin(
+                bot,
+                post=post,
+                file_id=post.file_id,
+                animal_type=post.animal_type,
+                schedule_time=post.schedule_time,
+                author=author,
+            )
+        else:
+            await _send_album_submission_to_admin(bot, posts=group, author=author)

@@ -46,3 +46,4 @@ redisdata/
 *.swp
 *.swo
 scratch/
+web/

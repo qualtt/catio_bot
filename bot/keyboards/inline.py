@@ -158,6 +158,7 @@ def get_admin_approval_kb(post_id: int, user_id: int) -> InlineKeyboardMarkup:
 def get_admin_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=bot_content.button("admin_schedule"), callback_data="admin_schedule_today")
+    builder.button(text=bot_content.button("admin_pending"), callback_data="admin_pending")
     builder.button(text=bot_content.button("admin_stats"), callback_data="admin_stats")
     builder.button(
         text=bot_content.button("admin_broadcast"),

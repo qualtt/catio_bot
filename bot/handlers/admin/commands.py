@@ -47,6 +47,14 @@ async def admin_stats_command(message: Message):
     await message.answer(text, reply_markup=get_admin_menu_kb())
 
 
+@admin_router.message(Command("pending", "moderation"))
+async def admin_pending_command(message: Message, bot: Bot):
+    if not is_admin_user(message.from_user.id):
+        await message.answer(bot_content.message("not_admin"))
+        return
+    await send_pending_posts_to_admin(bot, message)
+
+
 @admin_router.message(Command("muted"))
 async def admin_muted_command(message: Message):
     if not is_admin_user(message.from_user.id):

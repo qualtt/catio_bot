@@ -102,3 +102,38 @@ async def test_admin_custom_animal_type_normalizes_homoglyphs(db_session, monkey
     assert state.cleared
     assert message.answers[-1]["text"] == "Вид изменен."
     assert "Вид: Насекомое" in bot.edited_captions[-1]["caption"]
+
+
+@pytest.mark.asyncio
+async def test_admin_pending_posts(db_session, monkeypatch):
+    from bot.handlers.admin import actions as admin_actions
+    from bot.handlers.admin import commands as admin_commands
+
+    monkeypatch.setattr(admin_actions, "async_session", lambda: SessionContext(db_session))
+    monkeypatch.setattr(admin_commands, "async_session", lambda: SessionContext(db_session))
+
+    user = User(telegram_id=1001, username="testuser", full_name="Test User")
+    db_session.add(user)
+    await db_session.flush()
+
+    post1 = Post(user_id=user.id, file_id="file1", animal_type="Кот", status=PostStatus.PENDING)
+    post2 = Post(user_id=user.id, file_id="file2", animal_type="Собака", status=PostStatus.APPROVED)
+    db_session.add_all([post1, post2])
+    await db_session.commit()
+
+    sent_photos = []
+
+    class FakePendingBot:
+        async def send_photo(self, chat_id, photo, caption, reply_markup=None):
+            sent_photos.append({"photo": photo, "caption": caption, "reply_markup": reply_markup})
+
+    bot = FakePendingBot()
+    message = FakeMessage("/pending")
+
+    await admin_commands.admin_pending_command(message, bot)
+
+    assert len(message.answers) == 1
+    assert "Найдено постов на модерации: 1" in message.answers[0]["text"]
+    assert len(sent_photos) == 1
+    assert sent_photos[0]["photo"] == "file1"
+    assert "Вид: Кот" in sent_photos[0]["caption"]

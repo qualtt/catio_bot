@@ -100,6 +100,14 @@ async def handle_admin_muted_callback(callback: CallbackQuery):
     await callback.answer()
 
 
+@admin_router.callback_query(F.data == "admin_pending")
+async def handle_admin_pending_callback(callback: CallbackQuery, bot: Bot):
+    if not is_admin(callback):
+        await callback.answer(bot_content.message("not_admin"), show_alert=True)
+        return
+    await send_pending_posts_to_admin(bot, callback)
+
+
 @admin_router.callback_query(F.data == "admin_broadcast_send")
 async def handle_admin_broadcast_send(callback: CallbackQuery, state: FSMContext, bot: Bot):
     if not is_admin(callback):
