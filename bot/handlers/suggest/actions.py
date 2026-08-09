@@ -452,6 +452,17 @@ async def _send_single_submission_to_admin(
     except TelegramAPIError as err:
         logger.warning("Failed to send submission photo via file_id %s: %s", file_id, err)
         photo_obj = getattr(post, "photo", None)
+        if photo_obj is None and getattr(post, "photo_id", None):
+            from db.models.photo import Photo
+
+            async with async_session() as session:
+                photo_obj = await session.get(Photo, post.photo_id)
+        if photo_obj is None and file_id:
+            from db.models.photo import Photo
+
+            async with async_session() as session:
+                photo_obj = await session.scalar(select(Photo).where(Photo.telegram_file_id == file_id))
+
         sent = False
         if photo_obj and photo_obj.storage_bucket and photo_obj.storage_key:
             try:
@@ -558,6 +569,17 @@ async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str,
     except TelegramAPIError as err:
         logger.warning("Failed to send album submission photo via file_id %s: %s", first_post.file_id, err)
         photo_obj = getattr(first_post, "photo", None)
+        if photo_obj is None and getattr(first_post, "photo_id", None):
+            from db.models.photo import Photo
+
+            async with async_session() as session:
+                photo_obj = await session.get(Photo, first_post.photo_id)
+        if photo_obj is None and first_post.file_id:
+            from db.models.photo import Photo
+
+            async with async_session() as session:
+                photo_obj = await session.scalar(select(Photo).where(Photo.telegram_file_id == first_post.file_id))
+
         sent = False
         if photo_obj and photo_obj.storage_bucket and photo_obj.storage_key:
             try:

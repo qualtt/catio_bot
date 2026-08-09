@@ -428,6 +428,14 @@ async def handle_admin_approve(callback: CallbackQuery, bot: Bot):
         schedule_text = format_schedule(schedule_time)
         if callback_is_album_control(callback, post):
             await refresh_admin_album_control(callback, session, post)
+        elif callback.message.text:
+            await callback.message.edit_text(
+                text=bot_content.message(
+                    "approved_caption",
+                    schedule=schedule_text,
+                    points=score_award.points,
+                )
+            )
         else:
             await callback.message.edit_caption(
                 caption=bot_content.message(
@@ -478,7 +486,7 @@ async def handle_admin_reject_start(callback: CallbackQuery, state: FSMContext):
     )
     prompt = bot_content.message("admin_rejection_reason_prompt", post_id=post_id)
     reply_markup = get_admin_rejection_reason_kb(post_id, has_duplicate=post.duplicate_of_photo_id is not None)
-    if is_album_control and callback.message.text:
+    if callback.message.text:
         await callback.message.edit_text(prompt, reply_markup=reply_markup)
     else:
         await callback.message.edit_caption(caption=prompt, reply_markup=reply_markup)
@@ -602,7 +610,7 @@ async def handle_admin_custom_animal_start(callback: CallbackQuery, state: FSMCo
     )
 
     prompt = bot_content.message("admin_custom_animal_type_prompt", post_id=post_id)
-    if is_album_control and callback.message.text:
+    if callback.message.text:
         await callback.message.edit_text(prompt, reply_markup=get_admin_custom_animal_kb(post_id))
     else:
         await callback.message.edit_caption(caption=prompt, reply_markup=get_admin_custom_animal_kb(post_id))
@@ -661,6 +669,11 @@ async def handle_admin_set_animal(callback: CallbackQuery, state: FSMContext):
 
         if callback_is_album_control(callback, post):
             await refresh_admin_album_control(callback, session, post)
+        elif callback.message.text:
+            await callback.message.edit_text(
+                text=admin_post_caption(post),
+                reply_markup=get_admin_approval_kb(post_id, post.user_id),
+            )
         else:
             await callback.message.edit_caption(
                 caption=admin_post_caption(post),

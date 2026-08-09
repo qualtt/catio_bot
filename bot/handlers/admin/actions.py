@@ -89,11 +89,18 @@ async def edit_admin_rejection_result(
         )
         return
 
-    await bot.edit_message_caption(
-        chat_id=chat_id,
-        message_id=message_id,
-        caption=rejected_admin_caption(reason),
-    )
+    try:
+        await bot.edit_message_caption(
+            chat_id=chat_id,
+            message_id=message_id,
+            caption=rejected_admin_caption(reason),
+        )
+    except TelegramAPIError:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=rejected_admin_caption(reason),
+        )
 
 
 async def edit_admin_animal_change_result(
@@ -128,12 +135,20 @@ async def edit_admin_animal_change_result(
         )
         return
 
-    await bot.edit_message_caption(
-        chat_id=chat_id,
-        message_id=message_id,
-        caption=admin_post_caption(post),
-        reply_markup=get_admin_approval_kb(post.id, post.user_id),
-    )
+    try:
+        await bot.edit_message_caption(
+            chat_id=chat_id,
+            message_id=message_id,
+            caption=admin_post_caption(post),
+            reply_markup=get_admin_approval_kb(post.id, post.user_id),
+        )
+    except TelegramAPIError:
+        await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=admin_post_caption(post),
+            reply_markup=get_admin_approval_kb(post.id, post.user_id),
+        )
 
 
 async def reject_post(session, post: Post, *, reason: str | None = None) -> None:

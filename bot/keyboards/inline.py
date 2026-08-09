@@ -164,7 +164,7 @@ def get_admin_menu_kb() -> InlineKeyboardMarkup:
         text=bot_content.button("admin_broadcast"),
         callback_data="admin_broadcast_start",
     )
-    builder.button(text="Замученные пользователи", callback_data="admin_muted")
+    builder.button(text=bot_content.button("admin_muted"), callback_data="admin_muted")
     builder.adjust(1)
     return builder.as_markup()
 
