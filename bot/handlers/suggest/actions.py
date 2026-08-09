@@ -429,31 +429,65 @@ async def _send_single_submission_to_admin(
     schedule_time: datetime,
     author: str,
     ai_comment: str | None = None,
+    chat_id: int | None = None,
 ) -> None:
-    await bot.send_photo(
-        chat_id=config.ADMIN_ID,
-        photo=file_id,
-        caption=submission_caption(
-            animal_type=animal_type,
-            schedule=_format_schedule(schedule_time),
-            author=author,
-            duplicate_of_photo_id=post.duplicate_of_photo_id,
-            duplicate_distance=post.duplicate_distance,
-            ai_comment=ai_comment,
-        ),
-        reply_markup=get_admin_approval_kb(post.id, post.user_id),
+    target_chat_id = chat_id or config.ADMIN_ID
+    caption_text = submission_caption(
+        animal_type=animal_type,
+        schedule=_format_schedule(schedule_time),
+        author=author,
+        duplicate_of_photo_id=post.duplicate_of_photo_id,
+        duplicate_distance=post.duplicate_distance,
+        ai_comment=ai_comment,
     )
-    await _send_duplicate_original_to_admin(bot, post=post)
+    reply_markup = get_admin_approval_kb(post.id, post.user_id)
+
+    try:
+        await bot.send_photo(
+            chat_id=target_chat_id,
+            photo=file_id,
+            caption=caption_text,
+            reply_markup=reply_markup,
+        )
+    except TelegramAPIError as err:
+        logger.warning("Failed to send submission photo via file_id %s: %s", file_id, err)
+        photo_obj = getattr(post, "photo", None)
+        sent = False
+        if photo_obj and photo_obj.storage_bucket and photo_obj.storage_key:
+            try:
+                photo_bytes = await download_photo(
+                    storage_bucket=photo_obj.storage_bucket,
+                    storage_key=photo_obj.storage_key,
+                )
+                photo_input = BufferedInputFile(photo_bytes, filename=f"post_{post.id}.jpg")
+                await bot.send_photo(
+                    chat_id=target_chat_id,
+                    photo=photo_input,
+                    caption=caption_text,
+                    reply_markup=reply_markup,
+                )
+                sent = True
+            except Exception as e:
+                logger.error("Failed to send submission photo from S3 for post %s: %s", post.id, e)
+        if not sent:
+            await bot.send_message(
+                chat_id=target_chat_id,
+                text=caption_text,
+                reply_markup=reply_markup,
+            )
+
+    await _send_duplicate_original_to_admin(bot, post=post, chat_id=target_chat_id)
 
 
-async def _send_duplicate_original_to_admin(bot: Bot, *, post) -> None:
+async def _send_duplicate_original_to_admin(bot: Bot, *, post, chat_id: int | None = None) -> None:
     if post.duplicate_of_photo_id is None:
         return
 
+    target_chat_id = chat_id or config.ADMIN_ID
     original = getattr(post, "duplicate_of_photo", None)
     if original is None or not original.telegram_file_id:
         await bot.send_message(
-            chat_id=config.ADMIN_ID,
+            chat_id=target_chat_id,
             text=bot_content.message(
                 "admin_duplicate_original_unavailable",
                 post_id=post.id,
@@ -462,18 +496,39 @@ async def _send_duplicate_original_to_admin(bot: Bot, *, post) -> None:
         )
         return
 
-    await bot.send_photo(
-        chat_id=config.ADMIN_ID,
-        photo=original.telegram_file_id,
-        caption=bot_content.message(
-            "admin_duplicate_original_caption",
-            post_id=post.id,
-            photo_id=post.duplicate_of_photo_id,
-        ),
-    )
+    try:
+        await bot.send_photo(
+            chat_id=target_chat_id,
+            photo=original.telegram_file_id,
+            caption=bot_content.message(
+                "admin_duplicate_original_caption",
+                post_id=post.id,
+                photo_id=post.duplicate_of_photo_id,
+            ),
+        )
+    except TelegramAPIError as err:
+        logger.warning("Failed to send duplicate original photo via file_id: %s", err)
+        if original.storage_bucket and original.storage_key:
+            try:
+                photo_bytes = await download_photo(
+                    storage_bucket=original.storage_bucket,
+                    storage_key=original.storage_key,
+                )
+                await bot.send_photo(
+                    chat_id=target_chat_id,
+                    photo=BufferedInputFile(photo_bytes, filename=f"photo_{original.id}.jpg"),
+                    caption=bot_content.message(
+                        "admin_duplicate_original_caption",
+                        post_id=post.id,
+                        photo_id=post.duplicate_of_photo_id,
+                    ),
+                )
+            except Exception as e:
+                logger.error("Failed to send duplicate original photo from S3: %s", e)
 
 
-async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str) -> None:
+async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str, chat_id: int | None = None) -> None:
+    target_chat_id = chat_id or config.ADMIN_ID
     ordered_posts = sorted(posts, key=lambda post: post.submission_group_index or post.id)
 
     if len(ordered_posts) == 1:
@@ -485,18 +540,50 @@ async def _send_album_submission_to_admin(bot: Bot, *, posts: list, author: str)
             animal_type=post.animal_type,
             schedule_time=post.schedule_time,
             author=author,
+            chat_id=target_chat_id,
         )
         return
 
     first_post = ordered_posts[0]
-    await bot.send_photo(
-        chat_id=config.ADMIN_ID,
-        photo=first_post.file_id,
-        caption=admin_album_view_caption(ordered_posts, first_post, author=author),
-        reply_markup=get_admin_album_view_kb(ordered_posts, first_post),
-    )
+    caption_text = admin_album_view_caption(ordered_posts, first_post, author=author)
+    reply_markup = get_admin_album_view_kb(ordered_posts, first_post)
+
+    try:
+        await bot.send_photo(
+            chat_id=target_chat_id,
+            photo=first_post.file_id,
+            caption=caption_text,
+            reply_markup=reply_markup,
+        )
+    except TelegramAPIError as err:
+        logger.warning("Failed to send album submission photo via file_id %s: %s", first_post.file_id, err)
+        photo_obj = getattr(first_post, "photo", None)
+        sent = False
+        if photo_obj and photo_obj.storage_bucket and photo_obj.storage_key:
+            try:
+                photo_bytes = await download_photo(
+                    storage_bucket=photo_obj.storage_bucket,
+                    storage_key=photo_obj.storage_key,
+                )
+                photo_input = BufferedInputFile(photo_bytes, filename=f"post_{first_post.id}.jpg")
+                await bot.send_photo(
+                    chat_id=target_chat_id,
+                    photo=photo_input,
+                    caption=caption_text,
+                    reply_markup=reply_markup,
+                )
+                sent = True
+            except Exception as e:
+                logger.error("Failed to send album submission photo from S3: %s", e)
+        if not sent:
+            await bot.send_message(
+                chat_id=target_chat_id,
+                text=caption_text,
+                reply_markup=reply_markup,
+            )
+
     for post in ordered_posts:
-        await _send_duplicate_original_to_admin(bot, post=post)
+        await _send_duplicate_original_to_admin(bot, post=post, chat_id=target_chat_id)
 
 
 async def _first_album_schedule_conflict(session, schedule_times: list[datetime]) -> int | None:

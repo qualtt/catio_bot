@@ -171,10 +171,16 @@ async def send_pending_posts_to_admin(bot: Bot, target) -> None:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
+    target_chat_id = target.message.chat.id if isinstance(target, CallbackQuery) else target.chat.id
+
     async with async_session() as session:
         stmt = (
             select(Post)
-            .options(selectinload(Post.user), selectinload(Post.duplicate_of_photo))
+            .options(
+                selectinload(Post.user),
+                selectinload(Post.photo),
+                selectinload(Post.duplicate_of_photo),
+            )
             .where(Post.status == PostStatus.PENDING)
             .order_by(Post.created_at.asc())
         )
@@ -227,6 +233,7 @@ async def send_pending_posts_to_admin(bot: Bot, target) -> None:
                 animal_type=post.animal_type,
                 schedule_time=post.schedule_time,
                 author=author,
+                chat_id=target_chat_id,
             )
         else:
-            await _send_album_submission_to_admin(bot, posts=group, author=author)
+            await _send_album_submission_to_admin(bot, posts=group, author=author, chat_id=target_chat_id)
