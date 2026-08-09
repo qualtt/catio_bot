@@ -98,7 +98,13 @@ async def get_free_slot_times(session: AsyncSession, target_date: date) -> list[
         if scheduled_at is not None
     }
 
-    return [slot_time for slot_time in parse_daily_slot_times() if slot_time.strftime("%H:%M") not in occupied]
+    now = now_in_app_tz()
+    return [
+        slot_time
+        for slot_time in parse_daily_slot_times()
+        if slot_time.strftime("%H:%M") not in occupied
+        and (target_date != now.date() or combine_slot(target_date, slot_time) > now)
+    ]
 
 
 async def get_schedule_occupancy(
@@ -158,8 +164,7 @@ async def get_next_auto_slot(
     the old empty-day behavior.
     """
     if start_at is None:
-        tomorrow = now_in_app_tz().date() + timedelta(days=1)
-        start_at = combine_slot(tomorrow, time.min)
+        start_at = now_in_app_tz()
     else:
         start_at = ensure_app_timezone(start_at)
 
