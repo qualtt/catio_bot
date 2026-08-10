@@ -63,15 +63,10 @@ async def _show_status(
     reply_markup = get_tournament_start_kb(tournament_id) if tournament_id else None
     if source_message and source_message.photo:
         try:
-            await bot.edit_message_caption(
-                chat_id=chat_id,
-                message_id=source_message.message_id,
-                caption=text,
-                reply_markup=reply_markup,
-            )
-            return
+            await bot.delete_message(chat_id=chat_id, message_id=source_message.message_id)
         except TelegramAPIError:
-            logger.exception("Failed to edit tournament status message %s", source_message.message_id)
+            logger.exception("Failed to delete photo message before showing status %s", source_message.message_id)
+        source_message = None
 
     if source_message and source_message.text:
         try:
@@ -111,6 +106,11 @@ async def _send_or_edit_match(
             logger.exception("Failed to edit tournament match message %s", source_message.message_id)
 
     if sent_msg is None:
+        if source_message and source_message.text:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=source_message.message_id)
+            except TelegramAPIError:
+                pass
         sent_msg = await bot.send_photo(
             chat_id=chat_id,
             photo=photo,
@@ -155,6 +155,11 @@ async def _show_champion_pick(
             )
 
     if sent_msg is None:
+        if source_message and source_message.text:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=source_message.message_id)
+            except TelegramAPIError:
+                pass
         sent_msg = await bot.send_photo(
             chat_id=chat_id,
             photo=photo,
