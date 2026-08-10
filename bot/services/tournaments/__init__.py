@@ -1,4 +1,5 @@
 # ruff: noqa: F401
+from .bracket_drawer import generate_tournament_bracket_image
 from .images import (
     _compose_match_image,
     _fit_photo_panel,

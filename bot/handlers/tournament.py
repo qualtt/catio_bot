@@ -4,7 +4,7 @@ from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InputMediaPhoto, Message, ReplyKeyboardRemove
+from aiogram.types import BufferedInputFile, CallbackQuery, InputMediaPhoto, Message, ReplyKeyboardRemove
 from aiogram.utils.chat_action import ChatActionSender
 
 from bot.content import bot_content
@@ -13,6 +13,7 @@ from bot.services.tournaments import (
     TournamentMatchView,
     cache_entry_file_id,
     cache_match_file_id,
+    generate_tournament_bracket_image,
     get_current_tournament,
     get_latest_completed_tournament,
     get_next_open_match_for_user,
@@ -357,3 +358,37 @@ async def handle_tournament_vote(callback: CallbackQuery, bot: Bot):
         source_message=callback.message,
         tournament_id=result.tournament_id,
     )
+
+
+@tournament_router.message(Command("my_bracket", "bracket", "mybracket", "grid", "my_grid"))
+async def handle_my_bracket_command(message: Message, state: FSMContext, bot: Bot):
+    await state.clear()
+    async with async_session() as session:
+        user = await get_or_create_user(
+            session,
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            full_name=message.from_user.full_name,
+        )
+        tournament = await get_current_tournament(session)
+        if tournament is None:
+            tournament = await get_latest_completed_tournament(session)
+
+        if tournament is None:
+            await message.answer(bot_content.message("tournament_no_active"))
+            return
+
+        async with ChatActionSender.typing(bot=bot, chat_id=message.chat.id):
+            bracket_bytes = await generate_tournament_bracket_image(
+                session,
+                tournament.id,
+                user_id=user.id,
+            )
+
+        if not bracket_bytes:
+            await message.answer(bot_content.message("tournament_not_found"))
+            return
+
+        caption = f"📊 <b>Ваша личная турнирная сетка</b> ({tournament_type_label(tournament.type)} за {tournament_period_label(tournament)})\n\nЗдесь зелёным отмечены ваши личные выборы на каждом этапе!"
+        input_file = BufferedInputFile(bracket_bytes, filename=f"my-bracket-{tournament.id}.png")
+        await message.answer_document(document=input_file, caption=caption)

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
@@ -14,7 +14,7 @@ from bot.services.tournaments import (
     submit_tournament_vote,
     tournament_results_text,
 )
-from db.crud import app_timezone
+from db.crud import app_timezone, get_or_create_user
 from db.models.channel_history import ChannelHistory
 from db.models.photo import Photo
 from db.models.photo_tournament import (
@@ -606,3 +606,65 @@ async def test_send_tournament_results_notifications_marks_sent_at(db_session):
 
     text = await tournament_results_text(db_session, tournament)
     assert f"/photo_{tournament.winner_photo_id}" in text
+
+
+@pytest.mark.asyncio
+async def test_generate_tournament_bracket_image_with_user_id(db_session, monkeypatch):
+    from bot.services.tournaments.bracket_drawer import generate_tournament_bracket_image
+
+    now = datetime(2026, 8, 3, 10, 0, tzinfo=timezone.utc)
+    users = [await get_or_create_user(db_session, telegram_id=800 + i, full_name=f"User {i}") for i in range(2)]
+    photos = [_photo(i + 1) for i in range(4)]
+    db_session.add_all(photos)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChannelHistory(
+                message_id=200 + i,
+                file_id=f"f-{i}",
+                photo_id=photos[i].id,
+                published_at=now - timedelta(days=i),
+            )
+            for i in range(4)
+        ]
+    )
+    await db_session.commit()
+
+    tournament = await create_weekly_tournament_if_due(db_session, now=now)
+    matches = (
+        (
+            await db_session.execute(
+                select(PhotoTournamentMatch).where(PhotoTournamentMatch.tournament_id == tournament.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for match in matches:
+        if match.left_entry_id:
+            await submit_tournament_vote(
+                db_session,
+                match_id=match.id,
+                chosen_entry_id=match.left_entry_id,
+                user_id=users[0].id,
+            )
+
+    async def fake_download(*args, **kwargs):
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.new("RGB", (100, 100), "red")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        return buf.getvalue()
+
+    monkeypatch.setattr("bot.services.tournaments.bracket_drawer.download_photo", fake_download)
+
+    img_global = await generate_tournament_bracket_image(db_session, tournament.id)
+    img_user = await generate_tournament_bracket_image(db_session, tournament.id, user_id=users[0].id)
+
+    assert img_global is not None
+    assert img_user is not None
+    assert isinstance(img_user, bytes)

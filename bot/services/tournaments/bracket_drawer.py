@@ -62,7 +62,13 @@ def _create_thumbnail(img: Image.Image, size: tuple[int, int] = (80, 80)) -> Ima
     return output
 
 
-async def generate_tournament_bracket_image(session: AsyncSession, tournament_id: int) -> bytes | None:
+async def generate_tournament_bracket_image(
+    session: AsyncSession,
+    tournament_id: int,
+    user_id: int | None = None,
+) -> bytes | None:
+    from db.models.photo_tournament import PhotoTournamentVote
+
     # 1. Fetch all matches
     matches = (
         await session.scalars(
@@ -80,6 +86,26 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
 
     if not matches:
         return None
+
+    user_votes: dict[int, int] = {}
+    user_views = {}
+    if user_id is not None:
+        vote_records = (
+            await session.scalars(
+                select(PhotoTournamentVote).where(
+                    PhotoTournamentVote.tournament_id == tournament_id,
+                    PhotoTournamentVote.user_id == user_id,
+                )
+            )
+        ).all()
+        user_votes = {v.match_id: v.chosen_entry_id for v in vote_records}
+
+        from bot.services.tournaments.voting import resolve_user_match_view
+
+        for m in matches:
+            v = await resolve_user_match_view(session, user_id=user_id, match=m)
+            if v:
+                user_views[m.id] = v
 
     # Group matches by round_number
     max_round = max(m.round.round_number for m in matches)
@@ -110,21 +136,18 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
     COL_WIDTH = 320
     ROW_HEIGHT = 220
 
-    # Find total leaf nodes by traversing
     leaf_count = sum(1 for m in matches if not m.feeder_left_match_id and not m.feeder_right_match_id)
     if leaf_count == 0:
         leaf_count = 1
 
     width = (max_round + 1) * COL_WIDTH + 50
     height = leaf_count * ROW_HEIGHT
-
     height = max(height, ROW_HEIGHT * 2)
 
     img = Image.new("RGB", (width, height), "#141414")
     draw = ImageDraw.Draw(img)
 
     try:
-        # Пытаемся использовать шрифты, которые установлены в Dockerfile (fonts-dejavu)
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
         bold_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
     except Exception:
@@ -158,17 +181,19 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
         return node.y
 
     assign_coords(root_node)
-
-    # Calculate height based on actual layout instead of estimate
     height = max(current_y, ROW_HEIGHT * 2)
 
-    # Fetch all needed photos concurrently
     photos_to_fetch = {}
     for m in matches:
-        if m.left_entry and m.left_entry.photo:
-            photos_to_fetch[m.left_entry.photo.id] = m.left_entry.photo
-        if m.right_entry and m.right_entry.photo:
-            photos_to_fetch[m.right_entry.photo.id] = m.right_entry.photo
+        uv = user_views.get(m.id)
+        l_ent = uv.left_entry if uv else m.left_entry
+        r_ent = uv.right_entry if uv else m.right_entry
+        if l_ent and l_ent.photo:
+            photos_to_fetch[l_ent.photo.id] = l_ent.photo
+        if r_ent and r_ent.photo:
+            photos_to_fetch[r_ent.photo.id] = r_ent.photo
+        if m.winner_entry and m.winner_entry.photo:
+            photos_to_fetch[m.winner_entry.photo.id] = m.winner_entry.photo
 
     import asyncio
 
@@ -201,7 +226,6 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
             line_color = "#3a3a3c"
             line_w = 3
 
-            # Left feeder
             draw.line(
                 [(node.feeder_left.x + BOX_WIDTH, node.feeder_left.y), (node.x - 20, node.feeder_left.y)],
                 fill=line_color,
@@ -209,7 +233,6 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
             )
             draw.line([(node.x - 20, node.feeder_left.y), (node.x - 20, node.y)], fill=line_color, width=line_w)
 
-            # Right feeder
             draw.line(
                 [(node.feeder_right.x + BOX_WIDTH, node.feeder_right.y), (node.x - 20, node.feeder_right.y)],
                 fill=line_color,
@@ -217,35 +240,55 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
             )
             draw.line([(node.x - 20, node.feeder_right.y), (node.x - 20, node.y)], fill=line_color, width=line_w)
 
-            # Join to box
             draw.line([(node.x - 20, node.y), (node.x, node.y)], fill=line_color, width=line_w)
 
         box_rect = [node.x, node.y - BOX_HEIGHT // 2, node.x + BOX_WIDTH, node.y + BOX_HEIGHT // 2]
 
+        uv = user_views.get(node.match.id)
+        left_entry = uv.left_entry if uv else node.match.left_entry
+        right_entry = uv.right_entry if uv else node.match.right_entry
+
+        chosen_id = user_votes.get(node.match.id)
         has_winner = node.match.winner_entry_id is not None
 
         draw.rounded_rectangle(box_rect, radius=12, fill="#2c2c2e", outline="#48484a", width=1)
 
-        if node.match.left_entry:
-            l_photo = fetched_images.get(node.match.left_entry.photo.id)
+        if left_entry:
+            l_photo = fetched_images.get(left_entry.photo.id)
             if l_photo:
                 img.paste(l_photo, (node.x + 10, node.y - 85), l_photo)
 
-            l_votes = get_plural_votes(node.match.left_votes)
-            c = "#34c759" if has_winner and node.match.winner_entry_id == node.match.left_entry_id else "#8e8e93"
-            draw.text((node.x + 100, node.y - 55), l_votes, fill=c, font=font)
+            if user_id is not None and chosen_id == left_entry.id:
+                l_votes_text = "ВЫБОР ✓"
+                c = "#34c759"
+            elif user_id is not None:
+                l_votes_text = get_plural_votes(node.match.left_votes)
+                c = "#8e8e93"
+            else:
+                l_votes_text = get_plural_votes(node.match.left_votes)
+                c = "#34c759" if has_winner and node.match.winner_entry_id == left_entry.id else "#8e8e93"
+
+            draw.text((node.x + 100, node.y - 55), l_votes_text, fill=c, font=font)
 
         draw.line([(node.x + 100, node.y), (node.x + 240, node.y)], fill="#48484a", width=1)
 
-        if node.match.right_entry:
-            r_photo = fetched_images.get(node.match.right_entry.photo.id)
+        if right_entry:
+            r_photo = fetched_images.get(right_entry.photo.id)
             if r_photo:
                 img.paste(r_photo, (node.x + 10, node.y + 5), r_photo)
 
-            r_votes = get_plural_votes(node.match.right_votes)
-            c = "#34c759" if has_winner and node.match.winner_entry_id == node.match.right_entry_id else "#8e8e93"
-            draw.text((node.x + 100, node.y + 35), r_votes, fill=c, font=font)
-        elif not node.match.right_entry and node.match.left_entry:
+            if user_id is not None and chosen_id == right_entry.id:
+                r_votes_text = "ВЫБОР ✓"
+                c = "#34c759"
+            elif user_id is not None:
+                r_votes_text = get_plural_votes(node.match.right_votes)
+                c = "#8e8e93"
+            else:
+                r_votes_text = get_plural_votes(node.match.right_votes)
+                c = "#34c759" if has_winner and node.match.winner_entry_id == right_entry.id else "#8e8e93"
+
+            draw.text((node.x + 100, node.y + 35), r_votes_text, fill=c, font=font)
+        elif not right_entry and left_entry:
             draw.text((node.x + 100, node.y + 35), "АВТОПРОХОД", fill="#8e8e93", font=font)
 
     draw_node(root_node)
@@ -260,15 +303,30 @@ async def generate_tournament_bracket_image(session: AsyncSession, tournament_id
     w_box = [winner_x, winner_y - WINNER_BOX_H // 2, winner_x + WINNER_BOX_W, winner_y + WINNER_BOX_H // 2]
     draw.rounded_rectangle(w_box, radius=16, fill="#34c759", outline="#248a3d", width=2)
 
-    if root_match.winner_entry:
-        w_photo = winner_images.get(root_match.winner_entry.photo.id)
+    root_uv = user_views.get(root_match.id)
+    root_left = root_uv.left_entry if root_uv else root_match.left_entry
+    root_right = root_uv.right_entry if root_uv else root_match.right_entry
+    root_chosen = user_votes.get(root_match.id)
+
+    winner_entry = None
+    if user_id is not None and root_chosen:
+        if root_left and root_chosen == root_left.id:
+            winner_entry = root_left
+        elif root_right and root_chosen == root_right.id:
+            winner_entry = root_right
+    elif root_match.winner_entry:
+        winner_entry = root_match.winner_entry
+
+    if winner_entry and winner_entry.photo:
+        w_photo = winner_images.get(winner_entry.photo.id)
         if w_photo:
             img.paste(w_photo, (winner_x + 30, winner_y - WINNER_BOX_H // 2 + 15), w_photo)
 
-    bbox = draw.textbbox((0, 0), "ПОБЕДИТЕЛЬ!", font=bold_font)
+    winner_label = "ВАШ ВЫБОР!" if (user_id is not None and root_chosen) else "ПОБЕДИТЕЛЬ!"
+    bbox = draw.textbbox((0, 0), winner_label, font=bold_font)
     text_w = bbox[2] - bbox[0]
     text_x = winner_x + (WINNER_BOX_W - text_w) // 2
-    draw.text((text_x, winner_y + 55), "ПОБЕДИТЕЛЬ!", fill="#ffffff", font=bold_font)
+    draw.text((text_x, winner_y + 55), winner_label, fill="#ffffff", font=bold_font)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
