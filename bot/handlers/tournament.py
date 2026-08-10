@@ -10,6 +10,8 @@ from bot.content import bot_content
 from bot.keyboards.inline import get_tournament_match_kb, get_tournament_start_kb
 from bot.services.tournaments import (
     TournamentMatchView,
+    cache_entry_file_id,
+    cache_match_file_id,
     get_current_tournament,
     get_latest_completed_tournament,
     get_next_open_match_for_user,
@@ -96,24 +98,28 @@ async def _send_or_edit_match(
         right_entry_id=view.right_entry.id,
     )
 
+    sent_msg = None
     if source_message and source_message.photo:
         try:
-            await bot.edit_message_media(
+            sent_msg = await bot.edit_message_media(
                 chat_id=chat_id,
                 message_id=source_message.message_id,
                 media=InputMediaPhoto(media=photo, caption=caption),
                 reply_markup=reply_markup,
             )
-            return
         except TelegramAPIError:
             logger.exception("Failed to edit tournament match message %s", source_message.message_id)
 
-    await bot.send_photo(
-        chat_id=chat_id,
-        photo=photo,
-        caption=caption,
-        reply_markup=reply_markup,
-    )
+    if sent_msg is None:
+        sent_msg = await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=caption,
+            reply_markup=reply_markup,
+        )
+
+    if isinstance(sent_msg, Message) and sent_msg.photo:
+        cache_match_file_id(view.match.id, sent_msg.photo[-1].file_id)
 
 
 async def _show_champion_pick(
@@ -133,27 +139,31 @@ async def _show_champion_pick(
     )
     reply_markup = None
 
+    sent_msg = None
     if source_message and source_message.photo:
         try:
-            await bot.edit_message_media(
+            sent_msg = await bot.edit_message_media(
                 chat_id=chat_id,
                 message_id=source_message.message_id,
                 media=InputMediaPhoto(media=photo, caption=caption),
                 reply_markup=reply_markup,
             )
-            return
         except TelegramAPIError:
             logger.exception(
                 "Failed to edit tournament champion message %s",
                 source_message.message_id,
             )
 
-    await bot.send_photo(
-        chat_id=chat_id,
-        photo=photo,
-        caption=caption,
-        reply_markup=reply_markup,
-    )
+    if sent_msg is None:
+        sent_msg = await bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption=caption,
+            reply_markup=reply_markup,
+        )
+
+    if isinstance(sent_msg, Message) and sent_msg.photo:
+        cache_entry_file_id(entry.id, sent_msg.photo[-1].file_id)
 
 
 async def _show_next_match(

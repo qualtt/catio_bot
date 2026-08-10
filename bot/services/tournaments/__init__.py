@@ -2,6 +2,8 @@
 from .images import (
     _compose_match_image,
     _fit_photo_panel,
+    cache_entry_file_id,
+    cache_match_file_id,
     tournament_entry_photo_input,
     tournament_match_photo_input,
 )
