@@ -5,6 +5,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InputMediaPhoto, Message, ReplyKeyboardRemove
+from aiogram.utils.chat_action import ChatActionSender
 
 from bot.content import bot_content
 from bot.keyboards.inline import get_tournament_match_kb, get_tournament_start_kb
@@ -236,14 +237,15 @@ async def _show_next_match(
             )
             if champion is not None:
                 try:
-                    await _show_champion_pick(
-                        bot,
-                        chat_id=chat_id,
-                        source_message=source_message,
-                        entry=champion,
-                        status_text=status_text,
-                        tournament_id=tournament.id,
-                    )
+                    async with ChatActionSender.typing(bot=bot, chat_id=chat_id):
+                        await _show_champion_pick(
+                            bot,
+                            chat_id=chat_id,
+                            source_message=source_message,
+                            entry=champion,
+                            status_text=status_text,
+                            tournament_id=tournament.id,
+                        )
                 except Exception:
                     logger.exception("Failed to send tournament champion pick")
                     await _show_status(
@@ -265,7 +267,8 @@ async def _show_next_match(
             return
 
     try:
-        await _send_or_edit_match(bot, chat_id=chat_id, source_message=source_message, view=view)
+        async with ChatActionSender.typing(bot=bot, chat_id=chat_id):
+            await _send_or_edit_match(bot, chat_id=chat_id, source_message=source_message, view=view)
     except Exception:
         logger.exception("Failed to send tournament match")
         await bot.send_message(
