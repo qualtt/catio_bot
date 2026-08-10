@@ -93,7 +93,6 @@ async def _send_or_edit_match(
         right_entry_id=view.right_entry.id,
     )
 
-    sent_msg = None
     if source_message and source_message.photo:
         try:
             sent_msg = await bot.edit_message_media(
@@ -102,21 +101,29 @@ async def _send_or_edit_match(
                 media=InputMediaPhoto(media=photo, caption=caption),
                 reply_markup=reply_markup,
             )
-        except TelegramAPIError:
-            logger.exception("Failed to edit tournament match message %s", source_message.message_id)
+            if isinstance(sent_msg, Message) and sent_msg.photo:
+                cache_match_file_id(view.match.id, sent_msg.photo[-1].file_id)
+            return
+        except TelegramAPIError as err:
+            err_msg = str(err).lower()
+            if "message is not modified" in err_msg or "canceled by new edit" in err_msg:
+                return
+            if "message to edit not found" not in err_msg and "message can't be edited" not in err_msg:
+                logger.warning("Failed to edit tournament match message %s: %s", source_message.message_id, err)
+                return
 
-    if sent_msg is None:
-        if source_message and source_message.text:
-            try:
-                await bot.delete_message(chat_id=chat_id, message_id=source_message.message_id)
-            except TelegramAPIError:
-                pass
-        sent_msg = await bot.send_photo(
-            chat_id=chat_id,
-            photo=photo,
-            caption=caption,
-            reply_markup=reply_markup,
-        )
+    if source_message and source_message.text:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=source_message.message_id)
+        except TelegramAPIError:
+            pass
+
+    sent_msg = await bot.send_photo(
+        chat_id=chat_id,
+        photo=photo,
+        caption=caption,
+        reply_markup=reply_markup,
+    )
 
     if isinstance(sent_msg, Message) and sent_msg.photo:
         cache_match_file_id(view.match.id, sent_msg.photo[-1].file_id)
@@ -139,7 +146,6 @@ async def _show_champion_pick(
     )
     reply_markup = None
 
-    sent_msg = None
     if source_message and source_message.photo:
         try:
             sent_msg = await bot.edit_message_media(
@@ -148,24 +154,29 @@ async def _show_champion_pick(
                 media=InputMediaPhoto(media=photo, caption=caption),
                 reply_markup=reply_markup,
             )
-        except TelegramAPIError:
-            logger.exception(
-                "Failed to edit tournament champion message %s",
-                source_message.message_id,
-            )
+            if isinstance(sent_msg, Message) and sent_msg.photo:
+                cache_entry_file_id(entry.id, sent_msg.photo[-1].file_id)
+            return
+        except TelegramAPIError as err:
+            err_msg = str(err).lower()
+            if "message is not modified" in err_msg or "canceled by new edit" in err_msg:
+                return
+            if "message to edit not found" not in err_msg and "message can't be edited" not in err_msg:
+                logger.warning("Failed to edit tournament champion message %s: %s", source_message.message_id, err)
+                return
 
-    if sent_msg is None:
-        if source_message and source_message.text:
-            try:
-                await bot.delete_message(chat_id=chat_id, message_id=source_message.message_id)
-            except TelegramAPIError:
-                pass
-        sent_msg = await bot.send_photo(
-            chat_id=chat_id,
-            photo=photo,
-            caption=caption,
-            reply_markup=reply_markup,
-        )
+    if source_message and source_message.text:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=source_message.message_id)
+        except TelegramAPIError:
+            pass
+
+    sent_msg = await bot.send_photo(
+        chat_id=chat_id,
+        photo=photo,
+        caption=caption,
+        reply_markup=reply_markup,
+    )
 
     if isinstance(sent_msg, Message) and sent_msg.photo:
         cache_entry_file_id(entry.id, sent_msg.photo[-1].file_id)
