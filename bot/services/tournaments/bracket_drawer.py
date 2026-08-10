@@ -219,13 +219,11 @@ async def generate_tournament_bracket_image(
         return f"{n} голосов"
 
     def draw_node(node: BracketNode):
-        if node.feeder_left and node.feeder_right:
+        line_color = "#3a3a3c"
+        line_w = 3
+
+        if node.feeder_left:
             draw_node(node.feeder_left)
-            draw_node(node.feeder_right)
-
-            line_color = "#3a3a3c"
-            line_w = 3
-
             draw.line(
                 [(node.feeder_left.x + BOX_WIDTH, node.feeder_left.y), (node.x - 20, node.feeder_left.y)],
                 fill=line_color,
@@ -233,6 +231,8 @@ async def generate_tournament_bracket_image(
             )
             draw.line([(node.x - 20, node.feeder_left.y), (node.x - 20, node.y)], fill=line_color, width=line_w)
 
+        if node.feeder_right:
+            draw_node(node.feeder_right)
             draw.line(
                 [(node.feeder_right.x + BOX_WIDTH, node.feeder_right.y), (node.x - 20, node.feeder_right.y)],
                 fill=line_color,
@@ -240,6 +240,7 @@ async def generate_tournament_bracket_image(
             )
             draw.line([(node.x - 20, node.feeder_right.y), (node.x - 20, node.y)], fill=line_color, width=line_w)
 
+        if node.feeder_left or node.feeder_right:
             draw.line([(node.x - 20, node.y), (node.x, node.y)], fill=line_color, width=line_w)
 
         box_rect = [node.x, node.y - BOX_HEIGHT // 2, node.x + BOX_WIDTH, node.y + BOX_HEIGHT // 2]
