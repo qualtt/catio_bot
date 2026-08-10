@@ -222,6 +222,7 @@
     "tournament_match_caption": "{tournament_type}\nПериод: {period}\nГолосование до: {voting_deadline}\nРаунд {round_number}, пара {match_number}\n\n1: /photo_{left_photo_id}\n2: /photo_{right_photo_id}\n\nВыберите фото:",
     "tournament_result_match": "{icon} Матч {match_id}: Котик {left_id} ({left_votes}) vs Котик {right_id} ({right_votes}) - Победил {winner_id}",
     "tournament_bracket_caption": "📊 Подробные результаты и полная сетка турнира в хорошем качестве:",
+    "tournament_vote_recorded": "Голос принят! 🐾",
     "tournament_already_voted": "Вы уже проголосовали в этом матче! 🐾",
     "tournament_match_unavailable": "Эта пара уже недоступна.",
     "tournament_send_failed": "Не удалось показать пару. Попробуйте позже.",
