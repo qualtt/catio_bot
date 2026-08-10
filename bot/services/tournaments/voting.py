@@ -172,7 +172,7 @@ async def resolve_user_match_view(
     match: PhotoTournamentMatch,
 ) -> TournamentMatchView | None:
     if match.feeder_left_match_id is None:
-        if match.left_entry is None or match.right_entry is None:
+        if match.left_entry is None:
             return None
         return TournamentMatchView(match=match, left_entry=match.left_entry, right_entry=match.right_entry)
 
@@ -184,7 +184,7 @@ async def resolve_user_match_view(
         return None
 
     if match.feeder_right_match_id is None:
-        return None
+        return TournamentMatchView(match=match, left_entry=left_entry, right_entry=None)
 
     right_feeder = await _match_with_feeder_entries(session, match.feeder_right_match_id)
     if right_feeder is None:

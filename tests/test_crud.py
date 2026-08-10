@@ -10,6 +10,14 @@ from db.models.post import Post, PostStatus
 from db.models.user import User
 
 
+@pytest.fixture(autouse=True)
+def mock_now_crud(monkeypatch):
+    from datetime import datetime
+
+    mocked_time = lambda: datetime(2026, 8, 10, 15, 0, tzinfo=crud.app_timezone())
+    monkeypatch.setattr(crud, "now_in_app_tz", mocked_time)
+
+
 @pytest.mark.asyncio
 async def test_create_channel_history_item_normalizes_numeric_media_group_id(
     db_session,

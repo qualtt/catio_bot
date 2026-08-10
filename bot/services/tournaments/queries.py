@@ -218,7 +218,7 @@ async def get_next_open_match_for_user(
         if tournament is None or not _voting_is_open(tournament, now=current):
             continue
         view = await resolve_user_match_view(session, user_id=user_id, match=match)
-        if view is not None:
+        if view is not None and view.right_entry is not None:
             return view
     return None
 

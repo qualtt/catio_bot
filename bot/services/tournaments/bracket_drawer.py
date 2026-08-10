@@ -259,7 +259,10 @@ async def generate_tournament_bracket_image(
             if l_photo:
                 img.paste(l_photo, (node.x + 10, node.y - 85), l_photo)
 
-            if user_id is not None and chosen_id == left_entry.id:
+            if not right_entry:
+                l_votes_text = "ПРОХОД ➔"
+                c = "#34c759"
+            elif user_id is not None and chosen_id == left_entry.id:
                 l_votes_text = "ВЫБОР ✓"
                 c = "#34c759"
             elif user_id is not None:
