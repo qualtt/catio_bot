@@ -110,11 +110,15 @@ async def publish_due_posts(bot: Bot) -> int:
             post_id = post.id
             try:
                 await publish_post(bot, session, post)
+                published_count += 1
             except Exception:
                 logger.exception("Failed to publish post %d", post_id)
+                try:
+                    post.schedule_time = now_in_app_tz() + timedelta(minutes=5)
+                    await session.commit()
+                except Exception:
+                    logger.exception("Failed to defer retry schedule_time for post %d", post_id)
                 break
-
-            published_count += 1
 
     return published_count
 

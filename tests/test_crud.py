@@ -10,14 +10,6 @@ from db.models.post import Post, PostStatus
 from db.models.user import User
 
 
-@pytest.fixture(autouse=True)
-def mock_now_crud(monkeypatch):
-    from datetime import datetime
-
-    mocked_time = lambda: datetime(2026, 8, 10, 15, 0, tzinfo=crud.app_timezone())
-    monkeypatch.setattr(crud, "now_in_app_tz", mocked_time)
-
-
 @pytest.mark.asyncio
 async def test_create_channel_history_item_normalizes_numeric_media_group_id(
     db_session,
@@ -78,11 +70,15 @@ async def test_free_slots_and_day_availability_ignore_rejected_posts(db_session,
 
 @pytest.mark.asyncio
 async def test_next_auto_slot_uses_empty_days_not_partially_free_days(db_session, monkeypatch):
+    from datetime import datetime
+
     from bot.config import config
 
+    fixed_now = datetime(2026, 8, 10, 23, 0, tzinfo=crud.app_timezone())
+    monkeypatch.setattr("db.crud.schedule.now_in_app_tz", lambda: fixed_now)
     monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
     monkeypatch.setattr(config, "AUTO_POST_DAYS_AHEAD", 2)
-    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    tomorrow = fixed_now.date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
     await db_session.flush()
@@ -104,10 +100,14 @@ async def test_next_auto_slot_uses_empty_days_not_partially_free_days(db_session
 
 @pytest.mark.asyncio
 async def test_cat_auto_slot_uses_nearest_day_without_cat(db_session, monkeypatch):
+    from datetime import datetime
+
     from bot.config import config
 
+    fixed_now = datetime(2026, 8, 10, 23, 0, tzinfo=crud.app_timezone())
+    monkeypatch.setattr("db.crud.schedule.now_in_app_tz", lambda: fixed_now)
     monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
-    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    tomorrow = fixed_now.date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
     await db_session.flush()
@@ -129,10 +129,14 @@ async def test_cat_auto_slot_uses_nearest_day_without_cat(db_session, monkeypatc
 
 @pytest.mark.asyncio
 async def test_cat_auto_slot_skips_days_that_already_have_cat(db_session, monkeypatch):
+    from datetime import datetime
+
     from bot.config import config
 
+    fixed_now = datetime(2026, 8, 10, 23, 0, tzinfo=crud.app_timezone())
+    monkeypatch.setattr("db.crud.schedule.now_in_app_tz", lambda: fixed_now)
     monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
-    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    tomorrow = fixed_now.date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
     await db_session.flush()
@@ -154,10 +158,14 @@ async def test_cat_auto_slot_skips_days_that_already_have_cat(db_session, monkey
 
 @pytest.mark.asyncio
 async def test_non_cat_auto_slot_can_share_day_with_cat(db_session, monkeypatch):
+    from datetime import datetime
+
     from bot.config import config
 
+    fixed_now = datetime(2026, 8, 10, 23, 0, tzinfo=crud.app_timezone())
+    monkeypatch.setattr("db.crud.schedule.now_in_app_tz", lambda: fixed_now)
     monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
-    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    tomorrow = fixed_now.date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
     await db_session.flush()
@@ -179,10 +187,14 @@ async def test_non_cat_auto_slot_can_share_day_with_cat(db_session, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_non_cat_auto_slot_skips_non_empty_days_without_cat(db_session, monkeypatch):
+    from datetime import datetime
+
     from bot.config import config
 
+    fixed_now = datetime(2026, 8, 10, 23, 0, tzinfo=crud.app_timezone())
+    monkeypatch.setattr("db.crud.schedule.now_in_app_tz", lambda: fixed_now)
     monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "10:00,12:00")
-    tomorrow = crud.now_in_app_tz().date() + timedelta(days=1)
+    tomorrow = fixed_now.date() + timedelta(days=1)
     user = User(telegram_id=1001, username="user", full_name="User")
     db_session.add(user)
     await db_session.flush()
