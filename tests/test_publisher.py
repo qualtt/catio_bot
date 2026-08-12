@@ -108,3 +108,52 @@ async def test_publish_due_posts_defers_schedule_time_on_error(db_session, monke
     await db_session.refresh(post)
     assert post.status == PostStatus.APPROVED
     assert post.schedule_time.replace(tzinfo=None) > now.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_publish_post_recovers_if_message_exists_in_channel(db_session, monkeypatch):
+    from aiogram.exceptions import TelegramServerError
+
+    from bot.config import config
+    from bot.services.publisher import publish_post
+    from db.crud import create_channel_history_item, get_or_create_user, now_in_app_tz
+
+    monkeypatch.setattr(config, "CHANNEL_ID", "-100123")
+    monkeypatch.setattr(config, "ADMIN_ID", 999)
+
+    now = now_in_app_tz()
+    user = await get_or_create_user(db_session, telegram_id=123, full_name="User")
+    post = Post(
+        user_id=user.id,
+        file_id="photo123",
+        animal_type="кот",
+        status=PostStatus.APPROVED,
+        schedule_time=now,
+    )
+    db_session.add(post)
+    await db_session.commit()
+
+    await create_channel_history_item(
+        db_session,
+        chat_id=-100123,
+        message_id=500,
+        photo_id=None,
+        file_id="prev",
+        published_at=now,
+        animal_type="кот",
+    )
+
+    class RecoverBot:
+        async def send_photo(self, **kwargs):
+            raise TelegramServerError(method="sendPhoto", message="Gateway Timeout")
+
+        async def forward_message(self, chat_id, from_chat_id, message_id):
+            if message_id == 501:
+                return SimpleNamespace(message_id=501)
+            raise TelegramServerError(method="forwardMessage", message="Bad Request: message to forward not found")
+
+    await publish_post(RecoverBot(), db_session, post)
+
+    await db_session.refresh(post)
+    assert post.status == PostStatus.PUBLISHED
+    assert post.message_id == 501

@@ -5,7 +5,7 @@ from datetime import timedelta
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 from aiogram.types import BufferedInputFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from bot.config import config
@@ -15,6 +15,7 @@ from bot.services.photo_storage import download_photo
 from bot.services.tournaments import run_tournament_maintenance
 from db.crud import create_channel_history_item, now_in_app_tz
 from db.database import async_session
+from db.models.channel_history import ChannelHistory
 from db.models.post import Post, PostStatus
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,55 @@ async def post_photo_input(post: Post):
     return post.file_id
 
 
+async def _verify_and_recover_published_post(bot: Bot, session, post: Post, actual_published_at) -> bool:
+    chat_id = _channel_history_chat_id()
+    if not chat_id:
+        return False
+
+    try:
+        max_msg_id = await session.scalar(
+            select(func.max(ChannelHistory.message_id)).where(ChannelHistory.chat_id == chat_id)
+        )
+        if not max_msg_id:
+            return False
+
+        target_chat = config.ADMIN_ID or (post.user.telegram_id if post.user else None)
+        if not target_chat:
+            return False
+
+        for candidate_id in range(max_msg_id + 1, max_msg_id + 6):
+            try:
+                msg = await bot.forward_message(
+                    chat_id=target_chat,
+                    from_chat_id=config.CHANNEL_ID,
+                    message_id=candidate_id,
+                )
+                if msg:
+                    post.status = PostStatus.PUBLISHED
+                    post.message_id = candidate_id
+                    await session.commit()
+                    try:
+                        await create_channel_history_item(
+                            session,
+                            chat_id=chat_id,
+                            message_id=candidate_id,
+                            photo_id=post.photo_id,
+                            file_id=post.file_id,
+                            published_at=actual_published_at,
+                            animal_type=post.animal_type,
+                        )
+                    except Exception:
+                        logger.exception("Failed to index recovered post %s in channel_history", post.id)
+                    logger.info("Recovered post %s with channel message_id %s after timeout", post.id, candidate_id)
+                    return True
+            except TelegramAPIError:
+                continue
+    except Exception:
+        logger.exception("Error checking for post recovery in channel")
+
+    return False
+
+
 async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> None:
     actual_published_at = published_at or now_in_app_tz()
     try:
@@ -49,8 +99,11 @@ async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> N
             request_timeout=300,
         )
     except Exception:
-        logger.exception("Failed to publish post %s", post.id)
+        logger.exception("Failed to publish post %s, checking if post was already sent to channel...", post.id)
         await session.rollback()
+        recovered = await _verify_and_recover_published_post(bot, session, post, actual_published_at)
+        if recovered:
+            return
         raise
 
     post.status = PostStatus.PUBLISHED
