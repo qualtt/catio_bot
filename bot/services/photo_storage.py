@@ -3,16 +3,20 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import logging
 import mimetypes
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 import boto3
 from aiogram import Bot
+from aiogram.exceptions import TelegramAPIError
 from botocore.config import Config
 from PIL import Image, UnidentifiedImageError
 
 from bot.config import config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -193,10 +197,19 @@ async def upload_telegram_photo(
     file_unique_id: str | None,
     source: str,
 ) -> StoredPhoto:
-    telegram_file = await bot.get_file(file_id)
+    retries = 3
+    for attempt in range(retries):
+        try:
+            telegram_file = await bot.get_file(file_id)
+            buffer = io.BytesIO()
+            await bot.download_file(telegram_file.file_path, destination=buffer)
+            break
+        except (TelegramAPIError, asyncio.TimeoutError) as exc:
+            if attempt == retries - 1:
+                raise
+            logger.warning("Retrying upload_telegram_photo after error (attempt %d/%d): %s", attempt + 1, retries, exc)
+            await asyncio.sleep(1.0)
 
-    buffer = io.BytesIO()
-    await bot.download_file(telegram_file.file_path, destination=buffer)
     return await upload_photo_bytes(
         data=buffer.getvalue(),
         file_id=file_id,

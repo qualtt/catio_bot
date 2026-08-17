@@ -318,11 +318,21 @@ async def generate_tournament_bracket_image(
             winner_entry = root_left
         elif root_right and root_chosen == root_right.id:
             winner_entry = root_right
+        else:
+            winner_entry = await session.scalar(
+                select(PhotoTournamentEntry)
+                .options(selectinload(PhotoTournamentEntry.photo))
+                .where(PhotoTournamentEntry.id == root_chosen)
+            )
     elif root_match.winner_entry:
         winner_entry = root_match.winner_entry
 
     if winner_entry and winner_entry.photo:
         w_photo = winner_images.get(winner_entry.photo.id)
+        if not w_photo:
+            im = await _fetch_photo_image(winner_entry.photo.storage_bucket, winner_entry.photo.storage_key)
+            if im:
+                w_photo = _create_thumbnail(im, size=(120, 120))
         if w_photo:
             img.paste(w_photo, (winner_x + 30, winner_y - WINNER_BOX_H // 2 + 15), w_photo)
 

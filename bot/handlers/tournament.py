@@ -104,7 +104,11 @@ async def _send_or_edit_match(
                 reply_markup=reply_markup,
             )
             if isinstance(sent_msg, Message) and sent_msg.photo:
-                cache_match_file_id(view.match.id, sent_msg.photo[-1].file_id)
+                cache_match_file_id(
+                    view.left_entry.id,
+                    view.right_entry.id if view.right_entry else None,
+                    sent_msg.photo[-1].file_id,
+                )
             return
         except TelegramAPIError as err:
             err_msg = str(err).lower()
@@ -128,7 +132,11 @@ async def _send_or_edit_match(
     )
 
     if isinstance(sent_msg, Message) and sent_msg.photo:
-        cache_match_file_id(view.match.id, sent_msg.photo[-1].file_id)
+        cache_match_file_id(
+            view.left_entry.id,
+            view.right_entry.id if view.right_entry else None,
+            sent_msg.photo[-1].file_id,
+        )
 
 
 async def _show_champion_pick(

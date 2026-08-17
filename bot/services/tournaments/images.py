@@ -16,15 +16,16 @@ from .models import TournamentMatchView
 
 logger = logging.getLogger(__name__)
 
-_MATCH_FILE_ID_CACHE: dict[int, str] = {}
-_MATCH_BYTES_CACHE: dict[int, bytes] = {}
+_MATCH_FILE_ID_CACHE: dict[tuple[int, int | None], str] = {}
+_MATCH_BYTES_CACHE: dict[tuple[int, int | None], bytes] = {}
 _ENTRY_FILE_ID_CACHE: dict[int, str] = {}
 _ENTRY_BYTES_CACHE: dict[int, bytes] = {}
 
 
-def cache_match_file_id(match_id: int, file_id: str) -> None:
-    _MATCH_FILE_ID_CACHE[match_id] = file_id
-    _MATCH_BYTES_CACHE.pop(match_id, None)
+def cache_match_file_id(left_entry_id: int, right_entry_id: int | None, file_id: str) -> None:
+    key = (left_entry_id, right_entry_id)
+    _MATCH_FILE_ID_CACHE[key] = file_id
+    _MATCH_BYTES_CACHE.pop(key, None)
 
 
 def cache_entry_file_id(entry_id: int, file_id: str) -> None:
@@ -63,15 +64,25 @@ def _compose_match_image(left_data: bytes, right_data: bytes) -> bytes:
 
 
 async def tournament_match_photo_input(view: TournamentMatchView) -> str | BufferedInputFile:
-    match_id = view.match.id
-    if match_id in _MATCH_FILE_ID_CACHE:
-        return _MATCH_FILE_ID_CACHE[match_id]
+    left_id = view.left_entry.id
+    right_id = view.right_entry.id if view.right_entry else None
+    key = (left_id, right_id)
 
-    if match_id in _MATCH_BYTES_CACHE:
-        image_bytes = _MATCH_BYTES_CACHE[match_id]
+    if key in _MATCH_FILE_ID_CACHE:
+        return _MATCH_FILE_ID_CACHE[key]
+
+    if key in _MATCH_BYTES_CACHE:
+        image_bytes = _MATCH_BYTES_CACHE[key]
     else:
         left_photo = view.left_entry.photo
-        right_photo = view.right_entry.photo
+        right_photo = view.right_entry.photo if view.right_entry else None
+        if right_photo is None:
+            left_data = await download_photo(
+                storage_bucket=left_photo.storage_bucket,
+                storage_key=left_photo.storage_key,
+            )
+            return BufferedInputFile(left_data, filename=f"tournament-entry-{left_id}.jpg")
+
         left_data, right_data = await asyncio.gather(
             download_photo(
                 storage_bucket=left_photo.storage_bucket,
@@ -83,11 +94,11 @@ async def tournament_match_photo_input(view: TournamentMatchView) -> str | Buffe
             ),
         )
         image_bytes = await asyncio.to_thread(_compose_match_image, left_data, right_data)
-        _MATCH_BYTES_CACHE[match_id] = image_bytes
+        _MATCH_BYTES_CACHE[key] = image_bytes
 
     return BufferedInputFile(
         image_bytes,
-        filename=f"tournament-{match_id}.jpg",
+        filename=f"tournament-match-{left_id}-{right_id}.jpg",
     )
 
 

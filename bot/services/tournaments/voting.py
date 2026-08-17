@@ -152,17 +152,20 @@ async def _user_match_choice_entry(
 
     if match.status == MATCH_BYE:
         return await _entry_with_photo(session, match.left_entry_id)
-    if match.winner_entry_id is not None:
-        return await _entry_with_photo(session, match.winner_entry_id)
+
     chosen_entry_id = await session.scalar(
         select(PhotoTournamentVote.chosen_entry_id).where(
             PhotoTournamentVote.match_id == match.id,
             PhotoTournamentVote.user_id == user_id,
         )
     )
-    if chosen_entry_id is None:
-        return None
-    return await _entry_with_photo(session, chosen_entry_id)
+    if chosen_entry_id is not None:
+        return await _entry_with_photo(session, chosen_entry_id)
+
+    if match.winner_entry_id is not None:
+        return await _entry_with_photo(session, match.winner_entry_id)
+
+    return None
 
 
 async def resolve_user_match_view(

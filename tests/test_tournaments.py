@@ -668,3 +668,93 @@ async def test_generate_tournament_bracket_image_with_user_id(db_session, monkey
     assert img_global is not None
     assert img_user is not None
     assert isinstance(img_user, bytes)
+
+
+@pytest.mark.asyncio
+async def test_match_photo_caching_per_entry_pair(monkeypatch):
+    from types import SimpleNamespace
+
+    from bot.services.tournaments.images import (
+        _MATCH_BYTES_CACHE,
+        _MATCH_FILE_ID_CACHE,
+        cache_match_file_id,
+        tournament_match_photo_input,
+    )
+    from bot.services.tournaments.models import TournamentMatchView
+
+    _MATCH_FILE_ID_CACHE.clear()
+    _MATCH_BYTES_CACHE.clear()
+
+    async def fake_download(storage_bucket, storage_key):
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.new("RGB", (100, 100), "blue")
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        return buf.getvalue()
+
+    monkeypatch.setattr("bot.services.tournaments.images.download_photo", fake_download)
+
+    # Match 9 with User 1 branch: entry 1 vs entry 3
+    match = SimpleNamespace(id=9)
+    entry1 = SimpleNamespace(id=1, photo=SimpleNamespace(storage_bucket="b", storage_key="1"))
+    entry2 = SimpleNamespace(id=2, photo=SimpleNamespace(storage_bucket="b", storage_key="2"))
+    entry3 = SimpleNamespace(id=3, photo=SimpleNamespace(storage_bucket="b", storage_key="3"))
+    entry4 = SimpleNamespace(id=4, photo=SimpleNamespace(storage_bucket="b", storage_key="4"))
+
+    view1 = TournamentMatchView(match=match, left_entry=entry1, right_entry=entry3)
+    view2 = TournamentMatchView(match=match, left_entry=entry2, right_entry=entry4)
+
+    # Cache file_id for view1
+    cache_match_file_id(entry1.id, entry3.id, "telegram_file_id_view1")
+
+    res1 = await tournament_match_photo_input(view1)
+    assert res1 == "telegram_file_id_view1"
+
+    # View 2 must NOT receive view1's cached telegram_file_id
+    res2 = await tournament_match_photo_input(view2)
+    assert res2 != "telegram_file_id_view1"
+
+
+@pytest.mark.asyncio
+async def test_user_match_choice_entry_prioritizes_user_vote_over_global_winner(db_session):
+    from bot.services.tournaments.voting import _user_match_choice_entry
+    from db.models.photo_tournament import PhotoTournamentVote
+
+    photo1 = _photo(1)
+    photo2 = _photo(2)
+    db_session.add_all([photo1, photo2])
+    await db_session.flush()
+
+    user = await get_or_create_user(db_session, telegram_id=999, full_name="User")
+    entry1 = PhotoTournamentEntry(tournament_id=1, photo_id=photo1.id, seed=1)
+    entry2 = PhotoTournamentEntry(tournament_id=1, photo_id=photo2.id, seed=2)
+    db_session.add_all([entry1, entry2])
+    await db_session.flush()
+
+    match = PhotoTournamentMatch(
+        tournament_id=1,
+        round_id=1,
+        match_number=1,
+        left_entry_id=entry1.id,
+        right_entry_id=entry2.id,
+        winner_entry_id=entry2.id,  # Global winner is entry2
+    )
+    db_session.add(match)
+    await db_session.flush()
+
+    # User voted for entry1
+    vote = PhotoTournamentVote(
+        tournament_id=1,
+        match_id=match.id,
+        user_id=user.id,
+        chosen_entry_id=entry1.id,
+    )
+    db_session.add(vote)
+    await db_session.commit()
+
+    choice = await _user_match_choice_entry(db_session, user_id=user.id, match=match)
+    assert choice is not None
+    assert choice.id == entry1.id  # Must return user's choice (entry1), not global winner (entry2)
