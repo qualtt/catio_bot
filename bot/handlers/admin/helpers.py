@@ -256,12 +256,14 @@ async def load_admin_stats(session) -> str:
     )
 
     from bot.services.tournaments.queries import get_current_tournament
-    from db.crud import get_tournament_voter_count
+    from db.crud import get_tournament_completed_voter_count, get_tournament_voter_count
 
     current_tournament = await get_current_tournament(session)
     tournament_voters = 0
+    tournament_completed_voters = 0
     if current_tournament:
         tournament_voters = await get_tournament_voter_count(session, current_tournament.id)
+        tournament_completed_voters = await get_tournament_completed_voter_count(session, current_tournament.id)
     animal_stats = "\n".join(
         bot_content.message("admin_stats_animal_line", animal_type=animal_type or "?", count=count)
         for animal_type, count in animal_rows.all()
@@ -280,6 +282,7 @@ async def load_admin_stats(session) -> str:
         else bot_content.message("schedule_not_selected"),
         animal_stats=animal_stats,
         tournament_voters=tournament_voters,
+        tournament_completed_voters=tournament_completed_voters,
     )
 
 

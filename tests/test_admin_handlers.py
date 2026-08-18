@@ -137,3 +137,94 @@ async def test_admin_pending_posts(db_session, monkeypatch):
     assert len(sent_photos) == 1
     assert sent_photos[0]["photo"] == "file1"
     assert "Вид: Кот" in sent_photos[0]["caption"]
+
+
+@pytest.mark.asyncio
+async def test_load_admin_stats_includes_tournament_completed_voters(db_session):
+    from datetime import timedelta
+
+    from db.models.photo import Photo
+    from db.models.photo_tournament import (
+        TOURNAMENT_RUNNING,
+        TOURNAMENT_WEEKLY,
+        PhotoTournament,
+        PhotoTournamentEntry,
+        PhotoTournamentMatch,
+        PhotoTournamentRound,
+        PhotoTournamentVote,
+    )
+
+    now = datetime(2026, 8, 18, 12, 0, tzinfo=app_timezone())
+    tournament = PhotoTournament(
+        type=TOURNAMENT_WEEKLY,
+        status=TOURNAMENT_RUNNING,
+        started_at=now - timedelta(days=1),
+        voting_ends_at=now + timedelta(days=1),
+        period_start=now - timedelta(days=7),
+        period_end=now - timedelta(days=1),
+        current_round_number=1,
+    )
+    db_session.add(tournament)
+    await db_session.flush()
+
+    round1 = PhotoTournamentRound(
+        tournament_id=tournament.id,
+        round_number=1,
+        started_at=now,
+        ends_at=now + timedelta(days=1),
+    )
+    round2 = PhotoTournamentRound(
+        tournament_id=tournament.id,
+        round_number=2,
+        started_at=now,
+        ends_at=now + timedelta(days=1),
+    )
+    db_session.add_all([round1, round2])
+    await db_session.flush()
+
+    match_r1 = PhotoTournamentMatch(tournament_id=tournament.id, round_id=round1.id, match_number=1)
+    match_final = PhotoTournamentMatch(tournament_id=tournament.id, round_id=round2.id, match_number=1)
+    db_session.add_all([match_r1, match_final])
+    await db_session.flush()
+
+    user1 = User(telegram_id=1, username="u1", full_name="U1")
+    user2 = User(telegram_id=2, username="u2", full_name="U2")
+    db_session.add_all([user1, user2])
+    await db_session.flush()
+
+    photo1 = Photo(storage_bucket="b", storage_key="1", sha256="1" * 64)
+    photo2 = Photo(storage_bucket="b", storage_key="2", sha256="2" * 64)
+    db_session.add_all([photo1, photo2])
+    await db_session.flush()
+
+    entry1 = PhotoTournamentEntry(tournament_id=tournament.id, photo_id=photo1.id, seed=1)
+    entry2 = PhotoTournamentEntry(tournament_id=tournament.id, photo_id=photo2.id, seed=2)
+    db_session.add_all([entry1, entry2])
+    await db_session.flush()
+
+    # User 1 voted in round 1 only
+    v1 = PhotoTournamentVote(
+        tournament_id=tournament.id,
+        match_id=match_r1.id,
+        user_id=user1.id,
+        chosen_entry_id=entry1.id,
+    )
+    # User 2 voted in round 1 AND in final round
+    v2_r1 = PhotoTournamentVote(
+        tournament_id=tournament.id,
+        match_id=match_r1.id,
+        user_id=user2.id,
+        chosen_entry_id=entry1.id,
+    )
+    v2_final = PhotoTournamentVote(
+        tournament_id=tournament.id,
+        match_id=match_final.id,
+        user_id=user2.id,
+        chosen_entry_id=entry2.id,
+    )
+    db_session.add_all([v1, v2_r1, v2_final])
+    await db_session.commit()
+
+    stats_text = await admin_helpers.load_admin_stats(db_session)
+    assert "Проголосовало в текущем турнире: 2" in stats_text
+    assert "Полностью прошли: 1" in stats_text

@@ -173,7 +173,7 @@
     "admin_muted_success": "Пользователь замучен.",
     "admin_schedule_line": "#{post_id} · {time} · {animal_type} · {photo_ref} · {author}",
     "admin_post_manage": "Публикация #{post_id}\nВид: {animal_type}\nСтатус: {status}\nВремя: {schedule}\nАвтор: {author}",
-    "admin_stats_text": "📊 <b>Статистика</b>\n\n<b>Очередь постов:</b>\nНа модерации: {pending}\nОдобрено: {approved}\nОпубликовано: {published}\nОтклонено: {rejected}\n\n<b>Расписание:</b>\nНа сегодня (одобрено): {today_scheduled}\nПросрочено (не вышли): {overdue}\nСледующий пост: {next_schedule}\n\n<b>Животные (топ 5):</b>\n{animal_stats}\n\n<b>Турниры:</b>\nПроголосовало в текущем турнире: {tournament_voters}",
+    "admin_stats_text": "📊 <b>Статистика</b>\n\n<b>Очередь постов:</b>\nНа модерации: {pending}\nОдобрено: {approved}\nОпубликовано: {published}\nОтклонено: {rejected}\n\n<b>Расписание:</b>\nНа сегодня (одобрено): {today_scheduled}\nПросрочено (не вышли): {overdue}\nСледующий пост: {next_schedule}\n\n<b>Животные (топ 5):</b>\n{animal_stats}\n\n<b>Турниры:</b>\nПроголосовало в текущем турнире: {tournament_voters}\nПолностью прошли: {tournament_completed_voters}",
     "admin_stats_animal_line": "{animal_type}: {count}",
     "admin_stats_no_animals": "Пока нет данных.",
     "admin_invalid_date": "Не удалось прочитать дату.",

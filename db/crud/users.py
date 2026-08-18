@@ -2,7 +2,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models.photo import Photo
-from db.models.photo_tournament import PhotoTournament, PhotoTournamentVote
+from db.models.photo_tournament import (
+    PhotoTournament,
+    PhotoTournamentMatch,
+    PhotoTournamentRound,
+    PhotoTournamentVote,
+)
 from db.models.post import Post, PostStatus
 from db.models.user import User
 
@@ -98,5 +103,30 @@ async def get_users_not_voted_in_tournament(session: AsyncSession, tournament_id
 async def get_tournament_voter_count(session: AsyncSession, tournament_id: int) -> int:
     stmt = select(func.count(func.distinct(PhotoTournamentVote.user_id))).where(
         PhotoTournamentVote.tournament_id == tournament_id
+    )
+    return (await session.execute(stmt)).scalar() or 0
+
+
+async def get_tournament_completed_voter_count(session: AsyncSession, tournament_id: int) -> int:
+    final_round = await session.scalar(
+        select(PhotoTournamentRound)
+        .where(PhotoTournamentRound.tournament_id == tournament_id)
+        .order_by(PhotoTournamentRound.round_number.desc())
+        .limit(1)
+    )
+    if final_round is None:
+        return 0
+
+    final_match = await session.scalar(
+        select(PhotoTournamentMatch)
+        .where(PhotoTournamentMatch.round_id == final_round.id)
+        .order_by(PhotoTournamentMatch.match_number.asc())
+        .limit(1)
+    )
+    if final_match is None:
+        return 0
+
+    stmt = select(func.count(func.distinct(PhotoTournamentVote.user_id))).where(
+        PhotoTournamentVote.match_id == final_match.id
     )
     return (await session.execute(stmt)).scalar() or 0
