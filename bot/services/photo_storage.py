@@ -248,6 +248,37 @@ async def download_photo(*, storage_bucket: str, storage_key: str) -> bytes:
     return await asyncio.to_thread(download)
 
 
+async def restore_photo_from_telegram(
+    bot: Bot,
+    *,
+    file_id: str,
+    storage_bucket: str,
+    storage_key: str,
+    expected_sha256: str | None,
+    content_type: str | None = None,
+) -> bytes:
+    """Re-download a photo from Telegram and put it back to S3 under its original key."""
+    telegram_file = await bot.get_file(file_id)
+    buffer = io.BytesIO()
+    await bot.download_file(telegram_file.file_path, destination=buffer)
+    data = buffer.getvalue()
+
+    sha256 = hashlib.sha256(data).hexdigest()
+    if expected_sha256 and sha256 != expected_sha256:
+        raise ValueError(f"Telegram file sha256 {sha256} does not match stored {expected_sha256}")
+
+    def upload() -> None:
+        _s3_client().put_object(
+            Bucket=storage_bucket,
+            Key=storage_key,
+            Body=data,
+            ContentType=content_type or "image/jpeg",
+        )
+
+    await asyncio.to_thread(upload)
+    return data
+
+
 async def delete_photos_batch(*, storage_bucket: str, storage_keys: list[str]) -> None:
     if not storage_keys:
         return

@@ -74,6 +74,9 @@ class Settings(BaseSettings):
 
     TELEGRAM_PROXY_URL: str | None = None
 
+    SENTRY_DSN: str | None = None
+    SENTRY_ENVIRONMENT: str = "production"
+
     @field_validator("API_ID", mode="before")
     @classmethod
     def empty_api_id_to_none(cls, value: Any) -> Any:
@@ -92,6 +95,7 @@ class Settings(BaseSettings):
         "GEMINI_PROXY_URL",
         "GEMINI_BASE_URL",
         "TELEGRAM_PROXY_URL",
+        "SENTRY_DSN",
         mode="before",
     )
     @classmethod

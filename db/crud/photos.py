@@ -250,7 +250,13 @@ from datetime import datetime
 from sqlalchemy import delete, update
 
 
-async def get_abandoned_photos(session: AsyncSession, older_than: datetime) -> list[Photo]:
+async def get_abandoned_photos(
+    session: AsyncSession,
+    older_than: datetime,
+    *,
+    photo_ids: list[int] | None = None,
+    for_update: bool = False,
+) -> list[Photo]:
     has_usage = or_(
         select(Post.id)
         .where(
@@ -263,6 +269,10 @@ async def get_abandoned_photos(session: AsyncSession, older_than: datetime) -> l
     )
 
     stmt = select(Photo).where(Photo.created_at < older_than, ~has_usage)
+    if photo_ids is not None:
+        stmt = stmt.where(Photo.id.in_(photo_ids))
+    if for_update:
+        stmt = stmt.with_for_update(of=Photo)
     return list((await session.execute(stmt)).scalars().all())
 
 

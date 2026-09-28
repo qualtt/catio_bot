@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from bot.config import config
 from bot.content import bot_content
 from bot.handlers.identify import create_and_send_ready_identification_batches
-from bot.services.photo_storage import download_photo
+from bot.services.photo_storage import download_photo, restore_photo_from_telegram
 from bot.services.tournaments import run_tournament_maintenance
 from db.crud import create_channel_history_item, now_in_app_tz
 from db.database import async_session
@@ -28,16 +28,41 @@ def _channel_history_chat_id() -> int | None:
         return None
 
 
-async def post_photo_input(post: Post):
-    if post.photo:
-        photo_bytes = await download_photo(
-            storage_bucket=post.photo.storage_bucket,
-            storage_key=post.photo.storage_key,
-        )
-        filename = f"{post.photo.sha256 or post.id}.jpg"
-        return BufferedInputFile(photo_bytes, filename=filename)
+async def post_photo_input(bot: Bot, post: Post):
+    if not post.photo:
+        return post.file_id
 
-    return post.file_id
+    photo = post.photo
+    try:
+        photo_bytes = await download_photo(
+            storage_bucket=photo.storage_bucket,
+            storage_key=photo.storage_key,
+        )
+    except Exception:
+        # The S3 copy is gone or unreachable: the Telegram copy is still valid, so the
+        # post must not get stuck. Put the file back to S3 if possible, else send by file_id.
+        logger.exception(
+            "Photo %s of post %s is unavailable in S3 (%s), restoring from Telegram",
+            photo.id,
+            post.id,
+            photo.storage_key,
+        )
+        try:
+            photo_bytes = await restore_photo_from_telegram(
+                bot,
+                file_id=photo.telegram_file_id or post.file_id,
+                storage_bucket=photo.storage_bucket,
+                storage_key=photo.storage_key,
+                expected_sha256=photo.sha256,
+                content_type=photo.content_type,
+            )
+            logger.warning("Restored photo %s of post %s to S3 from Telegram", photo.id, post.id)
+        except Exception:
+            logger.exception("Failed to restore photo %s from Telegram, sending post %s by file_id", photo.id, post.id)
+            return post.file_id
+
+    filename = f"{photo.sha256 or post.id}.jpg"
+    return BufferedInputFile(photo_bytes, filename=filename)
 
 
 async def _verify_and_recover_published_post(bot: Bot, session, post: Post, actual_published_at) -> bool:
@@ -92,7 +117,7 @@ async def _verify_and_recover_published_post(bot: Bot, session, post: Post, actu
 async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> None:
     actual_published_at = published_at or now_in_app_tz()
     try:
-        photo = await post_photo_input(post)
+        photo = await post_photo_input(bot, post)
         message = await bot.send_photo(
             chat_id=config.CHANNEL_ID,
             photo=photo,

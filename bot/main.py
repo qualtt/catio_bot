@@ -20,10 +20,25 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
+def init_error_reporting() -> None:
+    if not config.SENTRY_DSN:
+        return
+
+    import sentry_sdk
+    from sentry_sdk.integrations.logging import ignore_logger
+
+    # Every logger.exception/logger.error becomes a GlitchTip event.
+    sentry_sdk.init(dsn=config.SENTRY_DSN, environment=config.SENTRY_ENVIRONMENT, traces_sample_rate=0)
+    # Polling network blips are retried by aiogram itself and would only add noise.
+    ignore_logger("aiogram.dispatcher")
+    logger.info("Error reporting enabled")
+
+
 from aiogram.client.session.aiohttp import AiohttpSession
 
 
 async def main():
+    init_error_reporting()
     proxy = config.TELEGRAM_PROXY_URL
     session = AiohttpSession(proxy=proxy) if proxy else None
     bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"), session=session)

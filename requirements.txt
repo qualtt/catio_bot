@@ -11,3 +11,4 @@ Pillow==10.4.0
 Pyrogram==2.0.106
 tgcrypto==1.2.5
 aiohttp-socks==0.9.1
+sentry-sdk==2.71.0

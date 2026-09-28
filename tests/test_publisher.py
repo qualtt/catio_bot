@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from aiogram.exceptions import TelegramServerError
 
 from bot.services.publisher import publish_post
 from db.models.post import Post, PostStatus
@@ -157,3 +158,86 @@ async def test_publish_post_recovers_if_message_exists_in_channel(db_session, mo
     await db_session.refresh(post)
     assert post.status == PostStatus.PUBLISHED
     assert post.message_id == 501
+
+
+class PhotoBot(FakeBot):
+    def __init__(self, telegram_data: bytes | None):
+        super().__init__()
+        self.telegram_data = telegram_data
+
+    async def get_file(self, file_id):
+        if self.telegram_data is None:
+            raise TelegramServerError(method="getFile", message="Bad Gateway")
+        return SimpleNamespace(file_path="photos/file.jpg")
+
+    async def download_file(self, file_path, destination):
+        destination.write(self.telegram_data)
+
+
+def _post_with_missing_s3_photo(sha256: str) -> Post:
+    from db.models.photo import Photo
+
+    photo = Photo(
+        id=7,
+        telegram_file_id="photo-file-id",
+        storage_bucket="test-bucket",
+        storage_key="catio-bot/photos/submissions/7.jpg",
+        sha256=sha256,
+        content_type="image/jpeg",
+    )
+    return Post(id=1, user_id=1, file_id="post-file-id", animal_type="кот", photo_id=7, photo=photo)
+
+
+@pytest.fixture
+def missing_s3_object(monkeypatch):
+    uploads = []
+
+    async def fake_download_photo(**kwargs):
+        raise RuntimeError("NoSuchKey")
+
+    class FakeS3:
+        def put_object(self, **kwargs):
+            uploads.append(kwargs)
+
+    async def fake_create_channel_history_item(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("bot.services.publisher.download_photo", fake_download_photo)
+    monkeypatch.setattr("bot.services.photo_storage._s3_client", lambda: FakeS3())
+    monkeypatch.setattr("bot.services.publisher.create_channel_history_item", fake_create_channel_history_item)
+    return uploads
+
+
+@pytest.mark.asyncio
+async def test_publish_post_restores_missing_s3_photo_from_telegram(missing_s3_object):
+    import hashlib
+
+    data = b"real-photo-bytes"
+    bot = PhotoBot(telegram_data=data)
+    post = _post_with_missing_s3_photo(hashlib.sha256(data).hexdigest())
+
+    await publish_post(bot, FakeSession(), post)
+
+    assert post.status == PostStatus.PUBLISHED
+    assert bot.sent_photos[0]["photo"].data == data
+    assert missing_s3_object == [
+        {
+            "Bucket": "test-bucket",
+            "Key": "catio-bot/photos/submissions/7.jpg",
+            "Body": data,
+            "ContentType": "image/jpeg",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("telegram_data", [None, b"different-bytes"])
+async def test_publish_post_falls_back_to_file_id_when_restore_fails(missing_s3_object, telegram_data):
+    bot = PhotoBot(telegram_data=telegram_data)
+    post = _post_with_missing_s3_photo("expected-sha")
+
+    await publish_post(bot, FakeSession(), post)
+
+    assert post.status == PostStatus.PUBLISHED
+    assert bot.sent_photos[0]["photo"] == "post-file-id"
+    assert missing_s3_object == []
