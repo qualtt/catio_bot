@@ -13,7 +13,7 @@ from bot.content import bot_content
 from bot.handlers.identify import create_and_send_ready_identification_batches
 from bot.services.photo_storage import download_photo, restore_photo_from_telegram
 from bot.services.tournaments import run_tournament_maintenance
-from db.crud import create_channel_history_item, now_in_app_tz
+from db.crud import create_channel_history_item, get_next_auto_slot, now_in_app_tz
 from db.database import async_session
 from db.models.channel_history import ChannelHistory
 from db.models.post import Post, PostStatus
@@ -163,6 +163,36 @@ async def publish_post(bot: Bot, session, post: Post, *, published_at=None) -> N
             logger.exception("Failed to notify user for post %s", post.id)
 
 
+async def _defer_failed_post(session, post: Post) -> None:
+    # publish_post rolled the session back, which expired the post.
+    await session.refresh(post)
+    post.publish_attempts += 1
+
+    if post.publish_attempts < config.PUBLISH_MAX_ATTEMPTS:
+        post.schedule_time = now_in_app_tz() + timedelta(minutes=5)
+        await session.commit()
+        return
+
+    # Give up on quick retries: a post that keeps failing must not end up in the
+    # channel at a random hour once the cause is fixed, so it goes to a regular slot.
+    # Clearing schedule_time first keeps the post from occupying a day it is leaving.
+    post.schedule_time = None
+    await session.flush()
+    post.schedule_time = await get_next_auto_slot(
+        session,
+        animal_type=post.animal_type,
+        start_at=now_in_app_tz() + timedelta(minutes=5),
+    )
+    post.publish_attempts = 0
+    await session.commit()
+    logger.error(
+        "Post %d failed to publish %d times in a row, moved to the next regular slot %s",
+        post.id,
+        config.PUBLISH_MAX_ATTEMPTS,
+        post.schedule_time.isoformat(),
+    )
+
+
 async def publish_due_posts(bot: Bot) -> int:
     now = now_in_app_tz()
     published_count = 0
@@ -192,8 +222,7 @@ async def publish_due_posts(bot: Bot) -> int:
             except Exception:
                 logger.exception("Failed to publish post %d", post_id)
                 try:
-                    post.schedule_time = now_in_app_tz() + timedelta(minutes=5)
-                    await session.commit()
+                    await _defer_failed_post(session, post)
                 except Exception:
                     logger.exception("Failed to defer retry schedule_time for post %d", post_id)
                 break

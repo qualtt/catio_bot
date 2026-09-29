@@ -1,3 +1,4 @@
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -241,3 +242,69 @@ async def test_publish_post_falls_back_to_file_id_when_restore_fails(missing_s3_
     assert post.status == PostStatus.PUBLISHED
     assert bot.sent_photos[0]["photo"] == "post-file-id"
     assert missing_s3_object == []
+
+
+class _SessionContext:
+    def __init__(self, session):
+        self.session = session
+
+    async def __aenter__(self):
+        return self.session
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class _FailingBot:
+    async def send_photo(self, **kwargs):
+        raise TelegramServerError(method="sendPhoto", message="Gateway Timeout")
+
+
+async def _run_failing_publish(db_session, monkeypatch, *, publish_attempts: int):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from bot.config import config
+    from bot.services.publisher import publish_due_posts
+    from db.crud import get_or_create_user
+
+    # 01:17 at night, as when the stuck album posts finally went out.
+    now = datetime(2026, 9, 29, 1, 17, tzinfo=ZoneInfo("Europe/Moscow"))
+    monkeypatch.setattr(config, "PUBLISH_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(config, "DAILY_SLOT_TIMES", "11:00")
+    monkeypatch.setattr("bot.services.publisher.async_session", lambda: _SessionContext(db_session))
+    monkeypatch.setattr("bot.services.publisher.now_in_app_tz", lambda: now)
+
+    user = await get_or_create_user(db_session, telegram_id=123, full_name="User")
+    post = Post(
+        user_id=user.id,
+        file_id="photo123",
+        animal_type="кот",
+        status=PostStatus.APPROVED,
+        schedule_time=now,
+        publish_attempts=publish_attempts,
+    )
+    db_session.add(post)
+    await db_session.commit()
+
+    assert await publish_due_posts(_FailingBot()) == 0
+    await db_session.refresh(post)
+    return post, now
+
+
+@pytest.mark.asyncio
+async def test_publish_due_posts_retries_soon_before_attempt_limit(db_session, monkeypatch):
+    post, now = await _run_failing_publish(db_session, monkeypatch, publish_attempts=1)
+
+    assert post.status == PostStatus.APPROVED
+    assert post.publish_attempts == 2
+    assert post.schedule_time.replace(tzinfo=None) == (now + timedelta(minutes=5)).replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_publish_due_posts_moves_post_to_regular_slot_after_attempt_limit(db_session, monkeypatch):
+    post, now = await _run_failing_publish(db_session, monkeypatch, publish_attempts=2)
+
+    assert post.status == PostStatus.APPROVED
+    assert post.publish_attempts == 0
+    assert post.schedule_time.replace(tzinfo=None) == now.replace(hour=11, minute=0, tzinfo=None)

@@ -36,6 +36,7 @@ class Post(Base):
     schedule_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_auto_scheduled: Mapped[bool] = mapped_column(Boolean, default=False)
     message_id: Mapped[int | None] = mapped_column(BigInteger)
+    publish_attempts: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="posts")

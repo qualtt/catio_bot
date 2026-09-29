@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     AUTO_POST_DAYS_AHEAD: int = 30
     DAILY_SLOT_TIMES: str = "11:00"
     PUBLISHER_POLL_INTERVAL_SECONDS: int = 60
+    PUBLISH_MAX_ATTEMPTS: int = 3
     CLEANUP_INTERVAL_SECONDS: int = 3600
     CLEANUP_EXPIRE_HOURS: int = 2
     BOT_CONTENT_PATH: str = "bot_content.json"
