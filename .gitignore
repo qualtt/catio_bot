@@ -47,3 +47,6 @@ redisdata/
 *.swo
 scratch/
 web/
+
+# Local photo mirror (docker-compose photo-mirror service)
+backups/

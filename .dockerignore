@@ -1,0 +1,23 @@
+# Secrets never go into the image: the bot gets them from env_file at runtime.
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal
+
+.git
+.github
+.venv
+venv
+__pycache__
+*.py[cod]
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.DS_Store
+
+backups
+scratch
+web
+api
+tests
